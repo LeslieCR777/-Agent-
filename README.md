@@ -49,6 +49,34 @@ curl -X POST http://localhost:3013/api/tasks \
 | Lead 拆解 | `npm run lead -- --taskId <父任务ID>` | 拆成子任务并行执行后汇总 |
 | 定时调度 | `POST /api/schedules` 建 cron | 到点自动创建任务 |
 | 实时看板 | 浏览器开首页 | WebSocket 推送任务流转 |
+| 文件资产 | 见下节 | 大文件存资产库，任务按需引用，prompt 保持精简 |
+
+## 文件资产库（给 Worker 喂数据）
+
+避免在 prompt 里粘贴大段数据（费 token 且易失真）。把数据文件上传到资产库，任务引用资产，Worker 执行时自动把文件拷进任务专属目录，claude 按需读取。
+
+```bash
+# 1. 上传数据文件 → 得到一个资产 id
+AID=$(curl -X POST "http://localhost:3013/api/assets?filename=sales.csv" \
+  -H "Authorization: Bearer dev-123123" -H "Content-Type: text/csv" \
+  --data-binary @sales.csv | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).asset.id))")
+
+# 2. 创建任务时用 attachments 引用资产
+curl -X POST http://localhost:3013/api/tasks \
+  -H "Authorization: Bearer dev-123123" -H "Content-Type: application/json" \
+  -d "{\"title\":\"分析\",\"prompt\":\"读取 ./sales.csv 分析趋势\",\"attachments\":[\"$AID\"]}"
+
+# 3. Worker 把资产拷入 .agent-workspace/tasks/<taskId>/，claude 直接读文件
+```
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/assets?filename=` | 上传（原始 body） |
+| GET | `/api/assets` | 资产列表 |
+| GET | `/api/assets/:id` | 下载文件本体 |
+| DELETE | `/api/assets/:id` | 删除 |
+
+每个任务有**独立工作目录** `.agent-workspace/tasks/<taskId>/`，多 Worker 并行互不干扰。
 
 ## API 一览
 
@@ -69,6 +97,10 @@ curl -X POST http://localhost:3013/api/tasks \
 | GET | `/api/memories/search?q=` | 语义检索 Top-K |
 | DELETE | `/api/memories/:id` | 删除记忆 |
 | GET | `/api/events?since=` | 事件流（增量拉取） |
+| POST | `/api/assets` | 上传文件资产（原始 body，`?filename=` 指定名） |
+| GET | `/api/assets` | 资产列表 |
+| GET | `/api/assets/:id` | 下载资产文件 |
+| DELETE | `/api/assets/:id` | 删除资产 |
 | POST | `/api/schedules` | 创建 cron 定时任务 |
 | GET | `/api/stats` | 仪表盘统计 |
 | GET | `/api/health` | 健康检查 |

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   error         TEXT,
   source        TEXT NOT NULL DEFAULT 'api',
   tags          TEXT,
+  attachments   TEXT,                -- JSON 数组：引用的资产 id 列表，执行时拷入任务目录
   created_at    TEXT NOT NULL,
   claimed_at    TEXT,
   started_at    TEXT,
@@ -85,3 +86,15 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+
+-- 文件资产库：可复用的数据文件，任务可通过 attachments 引用，执行时拷入任务工作目录
+CREATE TABLE IF NOT EXISTS assets (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  filename      TEXT NOT NULL,       -- 存储的文件名（磁盘上）
+  original_name TEXT NOT NULL,       -- 上传时的原始文件名
+  size          INTEGER NOT NULL,    -- 字节
+  mime          TEXT,
+  description   TEXT,
+  created_at    TEXT NOT NULL
+);

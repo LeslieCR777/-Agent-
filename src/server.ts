@@ -12,6 +12,7 @@ import { memoriesHandlers } from './api/handlers/memories.js';
 import { schedulesHandlers } from './api/handlers/schedules.js';
 import { eventsHandlers } from './api/handlers/events.js';
 import { statsHandlers } from './api/handlers/stats.js';
+import { assetsHandlers } from './api/handlers/assets.js';
 import { startSweeper, stopSweeper } from './heartbeat/sweeper.js';
 import { startScheduler, stopScheduler } from './scheduler/index.js';
 import { initWs, broadcast, stopWs } from './ws/index.js';
@@ -55,6 +56,13 @@ function buildRouter(): Router {
   // 事件 / 统计
   r.get('/api/events', (req, res) => { if (!requireApiKey(req, res)) return; eventsHandlers.list(req, res); });
   r.get('/api/stats', (req, res) => { if (!requireApiKey(req, res)) return; statsHandlers.get(req, res); });
+
+  // 资产库
+  r.post('/api/assets', async (req, res) => { if (!requireApiKey(req, res)) return; await assetsHandlers.upload(req, res); });
+  r.get('/api/assets', (req, res) => { if (!requireApiKey(req, res)) return; assetsHandlers.list(req, res); });
+  r.get('/api/assets/:id', (req, res) => { if (!requireApiKey(req, res)) return; assetsHandlers.download(req, res); });
+  r.get('/api/assets/:id/meta', (req, res) => { if (!requireApiKey(req, res)) return; assetsHandlers.meta(req, res); });
+  r.del('/api/assets/:id', (req, res) => { if (!requireApiKey(req, res)) return; assetsHandlers.del(req, res); });
 
   return r;
 }
@@ -107,7 +115,9 @@ export function createAppServer() {
     apiReq.params = match.params;
     apiReq.query = url.searchParams;
     try {
-      if (['POST', 'PATCH', 'PUT'].includes(method)) {
+      // 资产上传 body 是原始二进制/CSV，不走 JSON 解析（handler 自己读 raw）
+      const isAssetUpload = method === 'POST' && url.pathname === '/api/assets';
+      if (['POST', 'PATCH', 'PUT'].includes(method) && !isAssetUpload) {
         apiReq.body = await readJsonBody(req);
       }
       await match.handler(apiReq, res);

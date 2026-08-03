@@ -12,6 +12,7 @@ import {
 import { latestSessionForTask, startSession, appendSessionOutput, finishSession } from '../../db/queries/sessions.js';
 import { taskEvents } from '../../db/queries/events.js';
 import { setAgentBusy } from '../../db/queries/agents.js';
+import { getAssets } from '../../db/queries/assets.js';
 import { TRANSITIONS, TERMINAL_STATUSES, PRIORITY_MIN, PRIORITY_MAX, DEFAULT_PRIORITY } from '../../shared/constants.js';
 import type { Task, TaskStatus, TaskSource } from '../../shared/types.js';
 import { enrichPromptWithMemories } from '../../memory/enrich.js';
@@ -58,6 +59,16 @@ export const tasksHandlers = {
     if (!title) throw new HttpError(400, 'title is required');
     if (!prompt) throw new HttpError(400, 'prompt is required');
     const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === 'string') : undefined;
+    // 资产引用：校验 id 都存在，防止脏引用
+    const attachments = Array.isArray(body.attachments)
+      ? body.attachments.filter((a): a is string => typeof a === 'string')
+      : undefined;
+    if (attachments && attachments.length > 0) {
+      const existing = getAssets(attachments);
+      if (existing.length !== attachments.length) {
+        throw new HttpError(400, `some attachments not found: expected ${attachments.length}, got ${existing.length}`);
+      }
+    }
 
     const task = createTask({
       title,
@@ -65,6 +76,7 @@ export const tasksHandlers = {
       priority: parsePriority(body.priority),
       source: parseSource(body.source),
       tags,
+      attachments,
     });
     fireEnrich(task);
     sendJson(res, 201, task);

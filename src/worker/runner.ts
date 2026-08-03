@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
@@ -46,9 +46,9 @@ export function spawnAgent(args: string[], opts: { cwd: string }): ChildProcess 
       });
 }
 
-export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}): Promise<RunnerResult> {
+export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}, opts: { cwd?: string } = {}): Promise<RunnerResult> {
   return new Promise((resolvePromise, reject) => {
-    const workdir = resolveWorkspace();
+    const workdir = opts.cwd ?? resolveWorkspace();
     mkdirSync(workdir, { recursive: true });
 
     let child: ChildProcess;
@@ -98,4 +98,50 @@ export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}): Promi
 
 function resolveWorkspace(): string {
   return resolve(process.cwd(), AGENT_WORKDIR);
+}
+
+/**
+ * 准备任务专属工作目录：<cwd>/.agent-workspace/tasks/<taskId>/。
+ * attachments 为资产 id 列表（JSON 字符串），从 API 下载资产文件到该目录，
+ * 让 prompt 可以写相对路径引用（如 "读取 ./data.csv"）。隔离各任务上下文。
+ * await 确保资产在 Worker 执行前就位；单个资产下载失败不阻塞（记日志继续）。
+ */
+export async function prepareTaskDir(taskId: string, attachments: string | null): Promise<string> {
+  const dir = resolve(resolveWorkspace(), 'tasks', taskId);
+  mkdirSync(dir, { recursive: true });
+
+  if (attachments) {
+    let ids: string[] = [];
+    try {
+      ids = JSON.parse(attachments) as string[];
+    } catch {
+      ids = [];
+    }
+    for (const id of ids) {
+      try {
+        const name = await downloadAssetInto(id, dir);
+        logger.info('runner', `asset ${id.slice(0, 8)} -> ${name}`);
+      } catch (err) {
+        logger.warn('runner', `asset download failed ${id.slice(0, 8)}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+  return dir;
+}
+
+/** 从 API 下载资产到任务目录，返回落盘文件名（同步等待，Worker 执行前资产就位） */
+async function downloadAssetInto(assetId: string, dir: string): Promise<string> {
+  const res = await fetch(`${config.apiBaseUrl}/api/assets/${assetId}`, {
+    headers: { Authorization: `Bearer ${config.apiKey}` },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`asset HTTP ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  // 用原始文件名落盘（从 Content-Disposition 取）
+  const disp = res.headers.get('content-disposition') ?? '';
+  const m = disp.match(/filename="?([^";]+)"?/i);
+  const name = m ? decodeURIComponent(m[1]) : assetId;
+  const safe = name.split(/[\\/]/).pop() ?? assetId;
+  writeFileSync(resolve(dir, safe), buf);
+  return safe;
 }

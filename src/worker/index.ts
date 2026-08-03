@@ -1,7 +1,7 @@
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { apiAsAgent, api, ApiClientError } from './client.js';
-import { runAgent } from './runner.js';
+import { runAgent, prepareTaskDir } from './runner.js';
 import { Heartbeater } from './heartbeat.js';
 
 /**
@@ -16,6 +16,7 @@ interface TaskPayload {
     id: string;
     title: string;
     prompt: string;
+    attachments: string | null;
   };
 }
 
@@ -79,14 +80,17 @@ async function main(): Promise<void> {
   }
 }
 
-/** 执行单个任务：上报 in_progress → 跑 agent → 逐行上报日志 → 上报终态 */
-async function executeTask(agentId: string, task: { id: string; title: string; prompt: string }): Promise<void> {
+/** 执行单个任务：上报 in_progress → 准备资产 → 跑 agent → 逐行上报日志 → 上报终态 */
+async function executeTask(agentId: string, task: { id: string; title: string; prompt: string; attachments: string | null }): Promise<void> {
   logger.info('worker', `▶ executing task ${task.id.slice(0, 8)} "${task.title}"`);
 
   // 上报 in_progress（API 侧据此建 session）。这是后续 completed/failed
   // 的合法前置状态，必须确认成功；失败重试，避免快任务把 completed 顶到
   // 未 in_progress 的任务上被状态机拒绝。
   await reportInProgress(agentId, task.id);
+
+  // 准备任务专属工作目录：建目录 + 下载引用的资产（attachment id 列表）
+  const workdir = await prepareTaskDir(task.id, task.attachments);
 
   // 日志上报节流：500ms 批量一次
   const logs: string[] = [];
@@ -120,7 +124,7 @@ async function executeTask(agentId: string, task: { id: string; title: string; p
         void flushLogs();
       }
     },
-  });
+  }, { cwd: workdir });
   const elapsed = Math.round((Date.now() - runStart) / 1000);
   await flushLogs();
 

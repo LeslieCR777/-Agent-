@@ -29,6 +29,7 @@ export interface Task {
   error: string | null;
   source: TaskSource;
   tags: string | null; // JSON 数组字符串
+  attachments: string | null; // JSON 数组：资产 id 列表
   created_at: string; // ISO8601
   claimed_at: string | null;
   started_at: string | null;
@@ -92,6 +93,17 @@ export interface AppEvent {
   agent_id: string | null;
   type: EventType;
   payload: string | null; // JSON 字符串
+  created_at: string;
+}
+
+export interface Asset {
+  id: string;
+  name: string;
+  filename: string;       // 磁盘存储名（assets/<id>/filename）
+  original_name: string;
+  size: number;
+  mime: string | null;
+  description: string | null;
   created_at: string;
 }
 

@@ -9,7 +9,7 @@ import { insertEvent } from './events.js';
  */
 
 const COLS = `id, title, prompt, parent_id, status, priority, agent_id,
-  assign_count, result, error, source, tags, created_at, claimed_at, started_at, finished_at`;
+  assign_count, result, error, source, tags, attachments, created_at, claimed_at, started_at, finished_at`;
 
 export interface CreateTaskInput {
   title: string;
@@ -18,6 +18,7 @@ export interface CreateTaskInput {
   priority?: number;
   source?: TaskSource;
   tags?: string[];
+  attachments?: string[];
 }
 
 let lastCreatedMs = 0;
@@ -50,6 +51,7 @@ export function createTask(input: CreateTaskInput): Task {
       error: null,
       source: input.source ?? 'api',
       tags: input.tags ? JSON.stringify(input.tags) : null,
+      attachments: input.attachments && input.attachments.length > 0 ? JSON.stringify(input.attachments) : null,
       created_at: monotonicIso(),
       claimed_at: null,
       started_at: null,
@@ -58,12 +60,12 @@ export function createTask(input: CreateTaskInput): Task {
     getDb()
       .prepare(
         `INSERT INTO tasks (${COLS}) VALUES (
-          ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+          ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .run(
         row.id, row.title, row.prompt, row.parent_id, row.status, row.priority,
         row.agent_id, row.assign_count, row.result, row.error, row.source,
-        row.tags, row.created_at, row.claimed_at, row.started_at, row.finished_at
+        row.tags, row.attachments, row.created_at, row.claimed_at, row.started_at, row.finished_at
       );
     insertEvent({ task_id: row.id, type: 'task_created', payload: { title: row.title, source: row.source } });
     return row;
