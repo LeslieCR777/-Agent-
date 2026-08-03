@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Swarm 看板</title>
+<style>
+  :root { color-scheme: light; --border:#e2e8f0; --muted:#64748b; --bg:#f8fafc; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin:0; background:var(--bg); color:#0f172a; }
+  header { background:#0f172a; color:#fff; padding:14px 24px; display:flex; align-items:center; gap:16px; position:sticky; top:0; z-index:10; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .tag { background:#1e293b; padding:2px 8px; border-radius:999px; font-size:12px; color:#94a3b8; }
+  main { max-width:1200px; margin:0 auto; padding:24px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  @media (max-width: 900px) { .grid { grid-template-columns:1fr; } }
+  .card { background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; }
+  .card h2 { font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .stats { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:24px; }
+  .stat { background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px 20px; text-align:center; min-width:110px; }
+  .stat b { display:block; font-size:26px; }
+  .stat span { font-size:12px; color:var(--muted); }
+  .worker { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:8px; }
+  .idle { background:#22c55e; } .busy { background:#f59e0b; } .offline { background:#94a3b8; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:500; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; }
+  .b-unassigned{background:#e0e7ff;color:#4338ca}.b-claimed{background:#fef3c7;color:#b45309}.b-in_progress{background:#bfdbfe;color:#1d4ed8}
+  .b-completed{background:#bbf7d0;color:#166534}.b-failed{background:#fecaca;color:#b91c1c}.b-superseded{background:#e2e8f0;color:#475569}.b-stale{background:#fde68a;color:#92400e}
+  .log { background:#0f172a; color:#7dd3fc; font-family:ui-monospace,Consolas,monospace; font-size:12px; padding:12px; border-radius:8px; max-height:360px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
+  .empty { color:var(--muted); font-size:13px; padding:12px; text-align:center; }
+  form { display:flex; flex-direction:column; gap:10px; }
+  input, textarea, select { border:1px solid var(--border); border-radius:8px; padding:10px; font-size:14px; font-family:inherit; }
+  textarea { min-height:80px; resize:vertical; }
+  button { background:#2563eb; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; }
+  button:hover { background:#1d4ed8; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .filters { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .filters select, .filters input { font-size:13px; padding:6px 10px; }
+  .detail { margin-top:8px; background:#f1f5f9; border-radius:8px; padding:8px 12px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Swarm</h1>
+  <span class="tag">多 Agent 任务编排</span>
+  <span class="tag" id="conn">连接中…</span>
+</header>
+<main>
+  <div class="stats" id="stats"></div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>创建任务</h2>
+        <form id="create-form">
+          <input id="f-title" placeholder="标题" required>
+          <textarea id="f-prompt" placeholder="Prompt（发给 Agent 执行）" required></textarea>
+          <div class="row">
+            <select id="f-priority">
+              <option value="5">优先级 5（默认）</option>
+              <option value="1">1 最高</option>
+              <option value="3">3 高</option>
+              <option value="8">8 低</option>
+              <option value="10">10 最低</option>
+            </select>
+            <button type="submit">创建</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card" style="margin-top:24px">
+        <h2>Worker 状态</h2>
+        <div id="workers"><div class="empty">暂无 Worker</div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>实时日志</h2>
+        <div class="log" id="log">等待事件流…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
+    <h2>任务列表</h2>
+    <div class="filters">
+      <select id="f-status">
+        <option value="">全部状态</option>
+        <option value="unassigned">unassigned</option>
+        <option value="claimed">claimed</option>
+        <option value="in_progress">in_progress</option>
+        <option value="completed">completed</option>
+        <option value="failed">failed</option>
+        <option value="superseded">superseded</option>
+      </select>
+      <input id="f-q" placeholder="搜索标题/ID" style="width:220px">
+    </div>
+    <table>
+      <thead><tr><th>状态</th><th>标题</th><th>优先级</th><th>Worker</th><th>创建时间</th><th>结果</th></tr></thead>
+      <tbody id="tasks"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const API_KEY = 'dev-123123';
+const BASE = '';
+let events = [];
+let statusFilter = '';
+let qFilter = '';
+let taskCache = {};
+
+const $ = (id) => document.getElementById(id);
+const fmt = (t) => t ? new Date(t).toLocaleString() : '-';
+const esc = (s) => (s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const head = { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' };
+
+async function api(path, opts = {}) {
+  const res = await fetch(BASE + path, { headers: head, ...opts });
+  if (!res.ok) throw new Error(await res.text());
+  return res.status === 204 ? null : res.json();
+}
+
+async function loadAll() {
+  await Promise.all([loadStats(), loadWorkers(), loadTasks()]);
+}
+async function loadStats() {
+  try {
+    const s = await api('/api/stats');
+    const rows = [
+      ['任务总数', s.tasks_total],
+      ['待认领', s.tasks_by_status.unassigned ?? 0],
+      ['执行中', (s.tasks_by_status.in_progress ?? 0) + (s.tasks_by_status.claimed ?? 0)],
+      ['已完成', s.tasks_by_status.completed ?? 0],
+      ['失败', s.tasks_by_status.failed ?? 0],
+      ['记忆', s.memories_total],
+      ['Worker', s.agents.total],
+    ];
+    $('stats').innerHTML = rows.map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+  } catch {}
+}
+async function loadWorkers() {
+  try {
+    const { agents } = await api('/api/agents');
+    if (!agents.length) { $('workers').innerHTML = '<div class="empty">暂无 Worker</div>'; return; }
+    $('workers').innerHTML = agents.map((a) => `
+      <div class="worker">
+        <span><span class="dot ${a.status}"></span><b>${esc(a.name)}</b> <small>(${a.role})</small></span>
+        <span style="color:var(--muted);font-size:12px">${a.status}${a.current_task_id ? ' · task ' + a.current_task_id.slice(0,8) : ''}</span>
+      </div>`).join('');
+  } catch {}
+}
+async function loadTasks() {
+  const params = new URLSearchParams({ size: '50' });
+  if (statusFilter) params.set('status', statusFilter);
+  const { tasks } = await api('/api/tasks?' + params);
+  tasks.forEach((t) => taskCache[t.id] = t);
+  renderTasks(tasks);
+}
+function renderTasks(tasks) {
+  const list = tasks
+    .filter((t) => !qFilter || t.title.toLowerCase().includes(qFilter.toLowerCase()) || t.id.includes(qFilter))
+    .slice(0, 50);
+  $('tasks').innerHTML = list.length
+    ? list.map((t) => `
+      <tr>
+        <td><span class="badge b-${t.status}">${t.status}</span></td>
+        <td title="${esc(t.prompt)}">${esc(t.title)}</td>
+        <td>${t.priority}</td>
+        <td>${t.agent_id ? esc(t.agent_id) : '-'}</td>
+        <td>${fmt(t.created_at)}</td>
+        <td style="max-width:200px">${esc((t.result || t.error || '').slice(0, 40))}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" class="empty">无任务</td></tr>';
+}
+
+$('create-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    title: $('f-title').value.trim(),
+    prompt: $('f-prompt').value.trim(),
+    priority: Number($('f-priority').value),
+  };
+  if (!body.title || !body.prompt) return;
+  try {
+    await api('/api/tasks', { method: 'POST', body: JSON.stringify(body) });
+    $('f-title').value = ''; $('f-prompt').value = '';
+    await loadAll();
+  } catch (err) { addLog(`创建失败: ${err.message}`); }
+});
+$('f-status').addEventListener('change', (e) => { statusFilter = e.target.value; void loadTasks(); });
+$('f-q').addEventListener('input', (e) => { qFilter = e.target.value; void loadTasks(); });
+
+// ── WebSocket 事件流 ──
+function addLog(msg) {
+  const log = $('log');
+  log.textContent += msg + '\n';
+  log.scrollTop = log.scrollHeight;
+}
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onopen = () => { $('conn').textContent = '● 已连接'; };
+  ws.onclose = () => { $('conn').textContent = '○ 已断开，重连中'; setTimeout(connect, 2000); };
+  ws.onmessage = (msg) => {
+    try {
+      const data = JSON.parse(msg.data);
+      if (data.type === 'event') {
+        const ev = data.event;
+        events.push(ev);
+        addLog(`[${fmt(ev.created_at)}] ${ev.type} ${ev.task_id ? ev.task_id.slice(0,8) : ''} ${ev.agent_id ? '(' + ev.agent_id + ')' : ''}`);
+        // 增量刷新相关面板
+        void loadStats();
+        void loadWorkers();
+        if (ev.type.startsWith('task_')) void loadTasks();
+        if (ev.type === 'task_completed' || ev.type === 'task_failed') void loadTasks();
+      } else {
+        addLog(`[ws] ${data.type}`);
+      }
+    } catch {}
+  };
+}
+
+loadAll().catch(() => {});
+connect();
+</script>
+</body>
+</html>

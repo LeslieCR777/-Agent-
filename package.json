@@ -1,0 +1,22 @@
+{
+  "name": "agent-swarm",
+  "version": "1.0.0",
+  "description": "Lead-Worker 多 Agent 任务编排系统",
+  "type": "module",
+  "scripts": {
+    "api": "tsx src/server.ts",
+    "worker": "tsx src/worker/index.ts",
+    "lead": "tsx src/lead/index.ts",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "cron-parser": "^5.7.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
