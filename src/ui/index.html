@@ -57,7 +57,10 @@
         <h2>创建任务</h2>
         <form id="create-form">
           <input id="f-title" placeholder="标题" required>
-          <textarea id="f-prompt" placeholder="Prompt（发给 Agent 执行）" required></textarea>
+          <textarea id="f-prompt" placeholder="Prompt（发给 Agent 执行），可写相对路径引用资产，如 读取 ./sales.csv" required></textarea>
+          <select id="f-attachments" multiple title="附加资产（可多选，Ctrl+点击）">
+            <option value="">无附加资产</option>
+          </select>
           <div class="row">
             <select id="f-priority">
               <option value="5">优先级 5（默认）</option>
@@ -69,6 +72,17 @@
             <button type="submit">创建</button>
           </div>
         </form>
+      </div>
+
+      <div class="card" style="margin-top:24px">
+        <h2>资产库</h2>
+        <form id="asset-form">
+          <div class="row">
+            <input type="file" id="f-asset-file">
+            <button type="submit">上传资产</button>
+          </div>
+        </form>
+        <div id="assets" style="margin-top:12px"><div class="empty">暂无资产</div></div>
       </div>
 
       <div class="card" style="margin-top:24px">
@@ -126,8 +140,64 @@ async function api(path, opts = {}) {
 }
 
 async function loadAll() {
-  await Promise.all([loadStats(), loadWorkers(), loadTasks()]);
+  await Promise.all([loadStats(), loadWorkers(), loadTasks(), loadAssets()]);
 }
+
+// ── 资产库 ──
+let assetList = [];
+async function loadAssets() {
+  try {
+    const { assets } = await api('/api/assets');
+    assetList = assets;
+    // 填充"附加资产"多选下拉
+    const sel = $('f-attachments');
+    const keep = new Set(Array.from(sel.selectedOptions).map((o) => o.value));
+    sel.innerHTML = '<option value="">无附加资产</option>' + assets.map((a) =>
+      `<option value="${a.id}" ${keep.has(a.id) ? 'selected' : ''}>${esc(a.original_name)} (${fmtSize(a.size)})</option>`
+    ).join('');
+
+    // 资产列表卡片
+    $('assets').innerHTML = assets.length
+      ? assets.map((a) => `
+        <div class="worker">
+          <span><b>${esc(a.original_name)}</b> <small style="color:var(--muted)">${fmtSize(a.size)}</small></span>
+          <span class="row">
+            <a href="${BASE}/api/assets/${a.id}" target="_blank" style="font-size:12px;color:#2563eb">下载</a>
+            <button style="padding:4px 8px;font-size:12px;background:#dc2626" onclick="delAsset('${a.id}')">删</button>
+          </span>
+        </div>`).join('')
+      : '<div class="empty">暂无资产</div>';
+  } catch {}
+}
+function fmtSize(n) {
+  if (n > 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+  if (n > 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+async function delAsset(id) {
+  try {
+    await api('/api/assets/' + id, { method: 'DELETE' });
+    await loadAssets();
+  } catch (err) { addLog(`删除失败: ${err.message}`); }
+}
+$('asset-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const file = $('f-asset-file').files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`${BASE}/api/assets?filename=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${API_KEY}` }, // 不设 Content-Type，fetch 自动带 boundary
+      body: file,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    addLog(`资产上传成功: ${file.name}`);
+    $('f-asset-file').value = '';
+    await loadAssets();
+  } catch (err) { addLog(`上传失败: ${err.message}`); }
+});
 async function loadStats() {
   try {
     const s = await api('/api/stats');
@@ -180,16 +250,22 @@ function renderTasks(tasks) {
 
 $('create-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const attachments = Array.from($('f-attachments').selectedOptions)
+    .map((o) => o.value)
+    .filter(Boolean);
   const body = {
     title: $('f-title').value.trim(),
     prompt: $('f-prompt').value.trim(),
     priority: Number($('f-priority').value),
+    ...(attachments.length ? { attachments } : {}),
   };
   if (!body.title || !body.prompt) return;
   try {
     await api('/api/tasks', { method: 'POST', body: JSON.stringify(body) });
     $('f-title').value = ''; $('f-prompt').value = '';
+    $('f-attachments').selectedIndex = 0;
     await loadAll();
+    addLog(`任务已创建${attachments.length ? `（附加 ${attachments.length} 个资产）` : ''}`);
   } catch (err) { addLog(`创建失败: ${err.message}`); }
 });
 $('f-status').addEventListener('change', (e) => { statusFilter = e.target.value; void loadTasks(); });
