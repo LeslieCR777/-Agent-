@@ -8,7 +8,11 @@ import { logger } from '../shared/logger.js';
  */
 
 export const EMBEDDING_DIM = 256;
-const API_URL = 'https://api.openai.com/v1/embeddings';
+/** base URL 可通过 EMBEDDING_BASE_URL 配置（兼容 api.openai-proxy.org 等代理端点） */
+function apiUrl(): string {
+  const base = config.embeddingBaseUrl.replace(/\/+$/, '');
+  return `${base}/v1/embeddings`;
+}
 
 export function hasRemoteEmbedding(): boolean {
   return Boolean(config.embeddingApiKey);
@@ -28,7 +32,7 @@ export async function embedTexts(texts: string[]): Promise<Float64Array[]> {
 }
 
 async function embedRemote(texts: string[]): Promise<Float64Array[]> {
-  const res = await fetch(API_URL, {
+  const res = await fetch(apiUrl(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

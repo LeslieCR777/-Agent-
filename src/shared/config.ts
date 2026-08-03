@@ -45,6 +45,7 @@ export interface Config {
   apiBaseUrl: string;
   embeddingApiKey: string;
   embeddingModel: string;
+  embeddingBaseUrl: string;
   leadPollIntervalMs: number;
 }
 
@@ -61,5 +62,6 @@ export const config: Config = {
   apiBaseUrl: process.env[ENV.API_BASE_URL] || `http://127.0.0.1:3013`,
   embeddingApiKey: process.env[ENV.EMBEDDING_API_KEY] || '',
   embeddingModel: process.env[ENV.EMBEDDING_MODEL] || 'text-embedding-3-small',
+  embeddingBaseUrl: process.env[ENV.EMBEDDING_BASE_URL] || 'https://api.openai.com',
   leadPollIntervalMs: int(process.env[ENV.LEAD_POLL_INTERVAL_MS], 5000),
 };
