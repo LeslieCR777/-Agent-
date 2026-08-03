@@ -24,6 +24,28 @@ export interface RunnerResult {
 /** 长任务超时保护：默认 30 分钟，防止 claude 卡死导致 Worker 空转 */
 const RUN_TIMEOUT_MS = Number(process.env.RUN_TIMEOUT_MS ?? 30 * 60 * 1000);
 
+/**
+ * 启动命令行 Agent 子进程（供 worker/lead/distill 复用）。
+ * Windows 下 .cmd/.bat 包装必须走 shell，否则 EINVAL；prompt 由调用方写 stdin，
+ * 不拼进命令，无 shell 注入面。
+ */
+export function spawnAgent(args: string[], opts: { cwd: string }): ChildProcess {
+  const useShell = process.platform === 'win32';
+  return useShell
+    ? spawn([config.agentCli, ...args].join(' '), [], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: opts.cwd,
+        env: { ...process.env },
+        windowsHide: true,
+        shell: true,
+      })
+    : spawn(config.agentCli, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: opts.cwd,
+        env: { ...process.env },
+      });
+}
+
 export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}): Promise<RunnerResult> {
   return new Promise((resolvePromise, reject) => {
     const workdir = resolveWorkspace();
@@ -31,12 +53,7 @@ export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}): Promi
 
     let child: ChildProcess;
     try {
-      child = spawn(config.agentCli, ['-p', '--output-format', 'text'], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: workdir,
-        env: { ...process.env },
-        windowsHide: true,
-      });
+      child = spawnAgent(['-p', '--output-format', 'text'], { cwd: workdir });
     } catch (err) {
       reject(err as Error);
       return;

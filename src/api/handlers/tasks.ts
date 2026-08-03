@@ -143,9 +143,12 @@ export const tasksHandlers = {
       throw new HttpError(400, 'error is required for failed');
     }
 
-    // in_progress：确保 session 已建（首个 in_progress 或日志上报都触发），
-    // 日志为增量追加到 session 输出（Worker 流式上报，非终态迁移）
+    // in_progress：先推进状态机（claimed→in_progress），再建 session，
+    // 日志增量追加到 session 输出（Worker 流式上报）
     if (to === 'in_progress' && req.agentId) {
+      if (task.status !== 'in_progress') {
+        updateTaskStatus({ taskId, status: 'in_progress', agentId: req.agentId });
+      }
       let session = latestSessionForTask(taskId);
       if (!session) {
         session = startSession({ task_id: taskId, agent_id: req.agentId });

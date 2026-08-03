@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { api } from '../worker/client.js';
+import { spawnAgent } from '../worker/runner.js';
 import { AGENT_WORKDIR } from '../shared/constants.js';
 
 /**
@@ -182,26 +182,23 @@ function tryParseJsonArray(text: string): SubTaskSpec[] | null {
   return null;
 }
 
-/** 调 claude CLI（同 worker/runner：prompt 走 stdin） */
+/** 调 claude CLI（复用 worker/runner 的跨平台 spawn 封装；prompt 走 stdin） */
 function runAgent(prompt: string): Promise<string> {
   return new Promise((resolveP, reject) => {
     const workdir = resolve(process.cwd(), AGENT_WORKDIR);
     mkdirSync(workdir, { recursive: true });
-    const child = spawn(config.agentCli, ['-p', '--output-format', 'text'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: workdir,
-    });
+    const child = spawnAgent(['-p', '--output-format', 'text'], { cwd: workdir });
     let out = '';
     let err = '';
-    child.stdout.on('data', (d: Buffer) => (out += d.toString()));
-    child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    child.stdout?.on('data', (d: Buffer) => (out += d.toString()));
+    child.stderr?.on('data', (d: Buffer) => (err += d.toString()));
     child.on('error', reject);
     child.on('close', (code) => {
       if (code !== 0) reject(new Error(`agent exit ${code}: ${err.slice(0, 300)}`));
       else resolveP(out);
     });
-    child.stdin.write(prompt);
-    child.stdin.end();
+    child.stdin?.write(prompt);
+    child.stdin?.end();
   });
 }
 

@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { AGENT_WORKDIR } from '../shared/constants.js';
+import { spawnAgent } from '../worker/runner.js';
 import { embedTexts } from './embed.js';
 import { createMemory } from '../db/queries/memories.js';
 
@@ -51,19 +51,16 @@ export async function distillTaskExperience(input: {
   }
 }
 
-/** 调用 Agent 子进程（与 worker/runner 同一套 stdin 传参方式） */
+/** 调用 Agent 子进程（复用 worker/runner 的跨平台 spawn 封装） */
 function runAgent(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const workdir = resolveWorkspace();
     mkdirSync(workdir, { recursive: true });
-    const child = spawn(config.agentCli, ['-p', '--output-format', 'text'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: workdir,
-    });
+    const child = spawnAgent(['-p', '--output-format', 'text'], { cwd: workdir });
     let out = '';
     let err = '';
-    child.stdout.on('data', (d) => (out += d.toString()));
-    child.stderr.on('data', (d) => (err += d.toString()));
+    child.stdout?.on('data', (d) => (out += d.toString()));
+    child.stderr?.on('data', (d) => (err += d.toString()));
     child.on('error', reject);
     child.on('close', (code) => {
       if (code !== 0) {
@@ -72,8 +69,8 @@ function runAgent(prompt: string): Promise<string> {
         resolve(out);
       }
     });
-    child.stdin.write(prompt);
-    child.stdin.end();
+    child.stdin?.write(prompt);
+    child.stdin?.end();
   });
 }
 
