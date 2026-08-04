@@ -10,11 +10,26 @@ export async function setupTestDb(): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'agent-swarm-test-'));
   process.env.DB_PATH = join(dir, 'test.sqlite');
   process.env.EMBEDDING_API_KEY = ''; // 强制离线 embedding
+  // CI 相关 env 清空：避免读到真实 .env 里的 SMTP/SERPAPI 配置
+  process.env.CI_DEMO_MODE = '';
+  process.env.SMTP_HOST = '';
+  process.env.SMTP_PORT = '';
+  process.env.SERPAPI_KEY = '';
+  process.env.ALERT_EMAIL_TO = '';
+  process.env.CI_QUALITY_THRESHOLD = '';
+  process.env.CI_MAX_REFLEXION_ROUNDS = '';
   // 清掉 .env 干扰：config 优先读已有 env，这里显式覆盖
   const { config } = await import('../src/shared/config.js');
   config.dbPath = process.env.DB_PATH;
   config.embeddingApiKey = '';
   config.agentCli = 'echo'; // 测试环境用 echo 模拟 agent（避免依赖 claude）
+  config.ciDemoMode = false;
+  config.smtp.host = '';
+  config.smtp.port = 465;
+  config.serpApi.key = '';
+  config.alertEmailTo = [];
+  config.ciQualityThreshold = 7;
+  config.ciMaxReflexionRounds = 2;
   const { initDb } = await import('../src/db/index.js');
   initDb(); // 建表
   return;
@@ -22,10 +37,9 @@ export async function setupTestDb(): Promise<void> {
 
 export async function teardownTestDb(): Promise<void> {
   try {
-    // 先关掉 sqlite 连接，Windows 下文件句柄占用会导致 EPERM
-    const { getDb } = await import('../src/db/index.js');
-    const d = (getDb as unknown as { close?: () => void });
-    d.close?.();
+    // 用 closeDb() 把单例 db 置 null，下次 initDb 重新打开新路径（避免测试间残留）
+    const { closeDb } = await import('../src/db/index.js');
+    closeDb();
   } catch {
     /* ignore */
   }

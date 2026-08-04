@@ -29,9 +29,9 @@ async function fireEnrich(task: Task): Promise<void> {
   }
 }
 
-import { getDb } from '../../db/index.js';
-function updateTaskPrompt(taskId: string, prompt: string): void {
-  getDb().prepare(`UPDATE tasks SET prompt = ? WHERE id = ?`).run(prompt, taskId);
+import { getPool } from '../../db/index.js';
+async function updateTaskPrompt(taskId: string, prompt: string): Promise<void> {
+  await getPool().execute(`UPDATE tasks SET prompt = ? WHERE id = ?`, [prompt, taskId]);
 }
 
 function parsePriority(v: unknown): number {
@@ -46,7 +46,7 @@ function parsePriority(v: unknown): number {
 function parseSource(v: unknown): TaskSource {
   if (v === undefined) return 'api';
   const s = String(v);
-  if (!['api', 'slack', 'github', 'schedule'].includes(s)) throw new HttpError(400, 'invalid source');
+  if (!['api', 'slack', 'github', 'schedule', 'ci'].includes(s)) throw new HttpError(400, 'invalid source');
   return s as TaskSource;
 }
 
@@ -64,13 +64,13 @@ export const tasksHandlers = {
       ? body.attachments.filter((a): a is string => typeof a === 'string')
       : undefined;
     if (attachments && attachments.length > 0) {
-      const existing = getAssets(attachments);
+      const existing = await getAssets(attachments);
       if (existing.length !== attachments.length) {
         throw new HttpError(400, `some attachments not found: expected ${attachments.length}, got ${existing.length}`);
       }
     }
 
-    const task = createTask({
+    const task = await createTask({
       title,
       prompt,
       priority: parsePriority(body.priority),
@@ -78,57 +78,60 @@ export const tasksHandlers = {
       tags,
       attachments,
     });
-    fireEnrich(task);
+    // CI 任务（tags[0]==='ci'）的 prompt 是占位说明，真实指令由 Worker 执行时按上下文构建，
+    // 不参与记忆富化（避免把记忆段拼进占位 prompt）。
+    if (!tags || tags[0] !== 'ci') void fireEnrich(task);
     sendJson(res, 201, task);
   },
 
   /** GET /api/tasks 任务列表 */
-  list(req: ApiRequest, res: ServerResponse): void {
+  async list(req: ApiRequest, res: ServerResponse): Promise<void> {
     const q = req.query!;
     const filter = {
       status: (q.get('status') as TaskStatus) || undefined,
       priority: q.get('priority') !== null ? Number(q.get('priority')) : undefined,
       source: (q.get('source') as TaskSource) || undefined,
       parent_id: q.get('parent_id'),
+      tag: q.get('tag') || undefined,
       page: q.get('page') ? Number(q.get('page')) : undefined,
       size: q.get('size') ? Number(q.get('size')) : undefined,
     };
     if (filter.status && !['unassigned','claimed','in_progress','completed','failed','superseded','stale'].includes(filter.status)) {
       throw new HttpError(400, 'invalid status');
     }
-    sendJson(res, 200, listTasks(filter));
+    sendJson(res, 200, await listTasks(filter));
   },
 
   /** GET /api/tasks/:id 任务详情（含流转历史 + 最近 session） */
-  detail(req: ApiRequest, res: ServerResponse): void {
-    const task = getTask(req.params!.id);
+  async detail(req: ApiRequest, res: ServerResponse): Promise<void> {
+    const task = await getTask(req.params!.id);
     if (!task) throw new HttpError(404, 'NOT_FOUND');
-    const history = taskEvents(task.id);
-    const session = latestSessionForTask(task.id);
+    const history = await taskEvents(task.id);
+    const session = await latestSessionForTask(task.id);
     sendJson(res, 200, { task, history, session });
   },
 
   /** POST /api/tasks/next Worker 原子领取 */
   async claimNext(req: ApiRequest, res: ServerResponse): Promise<void> {
     const agentId = req.agentId!;
-    const task = claimNextTask(agentId);
+    const task = await claimNextTask(agentId);
     if (!task) return sendNoContent(res);
-    setAgentBusy(agentId, task.id);
+    await setAgentBusy(agentId, task.id);
     sendJson(res, 200, { task });
   },
 
   /** POST /api/tasks/:id/claim 手动认领指定任务 */
-  claim(req: ApiRequest, res: ServerResponse): void {
+  async claim(req: ApiRequest, res: ServerResponse): Promise<void> {
     const agentId = req.agentId!;
-    const task = claimTask(req.params!.id, agentId);
-    setAgentBusy(agentId, task.id);
+    const task = await claimTask(req.params!.id, agentId);
+    await setAgentBusy(agentId, task.id);
     sendJson(res, 200, { task });
   },
 
   /** PATCH /api/tasks/:id/status 状态迁移 + 上报结果 */
-  updateStatus(req: ApiRequest, res: ServerResponse): void {
+  async updateStatus(req: ApiRequest, res: ServerResponse): Promise<void> {
     const taskId = req.params!.id;
-    const task = getTask(taskId);
+    const task = await getTask(taskId);
     if (!task) throw new HttpError(404, 'NOT_FOUND');
 
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -159,20 +162,20 @@ export const tasksHandlers = {
     // 日志增量追加到 session 输出（Worker 流式上报）
     if (to === 'in_progress' && req.agentId) {
       if (task.status !== 'in_progress') {
-        updateTaskStatus({ taskId, status: 'in_progress', agentId: req.agentId });
+        await updateTaskStatus({ taskId, status: 'in_progress', agentId: req.agentId });
       }
-      let session = latestSessionForTask(taskId);
+      let session = await latestSessionForTask(taskId);
       if (!session) {
-        session = startSession({ task_id: taskId, agent_id: req.agentId });
+        session = await startSession({ task_id: taskId, agent_id: req.agentId });
       }
       if (typeof body.log === 'string' && body.log) {
-        appendSessionOutput(session.id, body.log);
+        await appendSessionOutput(session.id, body.log);
       }
       sendJson(res, 200, { ok: true });
       return;
     }
 
-    const updated = updateTaskStatus({
+    const updated = await updateTaskStatus({
       taskId,
       status: to,
       result: to === 'completed' ? (body.result as string) : undefined,
@@ -181,9 +184,9 @@ export const tasksHandlers = {
 
     // 终态时收尾 session + 异步沉淀记忆
     if (to === 'completed' || to === 'failed') {
-      const session = latestSessionForTask(taskId);
+      const session = await latestSessionForTask(taskId);
       if (session && !session.finished_at) {
-        finishSession(session.id, to === 'completed' ? 0 : 1);
+        await finishSession(session.id, to === 'completed' ? 0 : 1);
       }
       if (to === 'completed' && updated.result) {
         const sessionOut = session?.output ?? '';

@@ -3,122 +3,443 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agent Swarm 看板</title>
+<title>竞品情报 · Agent Swarm</title>
+<!-- 现代图标库（CDN，加载失败自动降级为文字） -->
+<script src="https://unpkg.com/lucide@latest"></script>
+<!-- 庆祝特效（CDN，加载失败跳过） -->
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
 <style>
-  :root { color-scheme: light; --border:#e2e8f0; --muted:#64748b; --bg:#f8fafc; }
+  /* ══════════ 设计令牌（深色科技感 · 竞品情报主题）══════════ */
+  :root {
+    --bg: #0a0f1f;
+    --bg-soft: #0e162e;
+    --card: #111b38;
+    --card-hover: #16234a;
+    --border: #1e2b52;
+    --border-light: #2a3a6b;
+    --text: #e6ecff;
+    --muted: #8b9cc8;
+    --faint: #5c6b96;
+    --primary: #6366f1;
+    --primary-2: #8b5cf6;
+    --accent: #22d3ee;
+    --success: #34d399;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --grad: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    --shadow-lg: 0 4px 16px -4px rgba(0,0,0,.5), 0 12px 40px -16px rgba(0,0,0,.7);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --font: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin:0; background:var(--bg); color:#0f172a; }
-  header { background:#0f172a; color:#fff; padding:14px 24px; display:flex; align-items:center; gap:16px; position:sticky; top:0; z-index:10; }
-  header h1 { font-size:18px; margin:0; font-weight:600; }
-  header .tag { background:#1e293b; padding:2px 8px; border-radius:999px; font-size:12px; color:#94a3b8; }
-  main { max-width:1200px; margin:0 auto; padding:24px; }
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
-  @media (max-width: 900px) { .grid { grid-template-columns:1fr; } }
-  .card { background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; }
-  .card h2 { font-size:14px; margin:0 0 12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
-  .stats { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:24px; }
-  .stat { background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px 20px; text-align:center; min-width:110px; }
-  .stat b { display:block; font-size:26px; }
+  html { scrollbar-color: var(--border-light) transparent; }
+  body {
+    font-family: var(--font); margin: 0; color: var(--text);
+    background:
+      radial-gradient(900px 420px at 12% -8%, rgba(99,102,241,.16), transparent 60%),
+      radial-gradient(700px 380px at 88% -10%, rgba(34,211,238,.10), transparent 55%),
+      var(--bg);
+    min-height: 100vh;
+  }
+
+  /* ══════════ 顶栏 ══════════ */
+  header {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 28px;
+    background: rgba(10,15,31,.82);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand-logo {
+    width:38px; height:38px; border-radius:11px; display:grid; place-items:center;
+    background: var(--grad); color:#fff; box-shadow: 0 4px 14px -4px rgba(99,102,241,.7);
+  }
+  .brand h1 { font-size:17px; margin:0; font-weight:700; letter-spacing:.3px; }
+  .brand small { color: var(--faint); font-size:11px; }
+  .header-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .clock { color: var(--muted); font-size:12px; font-variant-numeric: tabular-nums; }
+  .conn {
+    display:flex; align-items:center; gap:7px; font-size:12px;
+    padding:6px 12px; border-radius:999px; border:1px solid var(--border);
+    color: var(--muted); background: var(--card);
+  }
+  .conn .pulse { width:8px; height:8px; border-radius:50%; background:var(--faint); }
+  .conn.on .pulse { background:var(--success); box-shadow:0 0 0 0 rgba(52,211,153,.6); animation:breath 2s infinite; }
+  .conn.off .pulse { background:var(--danger); }
+  @keyframes breath {
+    0%{ box-shadow:0 0 0 0 rgba(52,211,153,.5); } 70%{ box-shadow:0 0 0 8px rgba(52,211,153,0); } 100%{ box-shadow:0 0 0 0 rgba(52,211,153,0); }
+  }
+
+  /* ══════════ Tab 导航 ══════════ */
+  nav.tabs {
+    position: sticky; top: 63px; z-index: 30;
+    display: flex; gap: 4px; padding: 10px 28px 0;
+    background: rgba(10,15,31,.9); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .tab-btn {
+    display:flex; align-items:center; gap:7px;
+    padding: 10px 16px 12px; font-size:13.5px; font-weight:600;
+    color: var(--muted); background:none; border:none; cursor:pointer;
+    border-bottom: 2px solid transparent; white-space:nowrap;
+    transition: color .2s, border-color .2s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--primary-2); border-color: var(--primary-2); }
+  .tab-btn svg { width:16px; height:16px; }
+
+  main { max-width: 1240px; margin: 0 auto; padding: 24px 28px 60px; }
+  .panel { display:none; animation: fadeUp .35s ease both; }
+  .panel.active { display:block; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+  /* ══════════ 统计卡 ══════════ */
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:14px; margin-bottom:22px; }
+  .stat {
+    position:relative; overflow:hidden; background:var(--card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow);
+    transition: transform .25s, border-color .25s, box-shadow .25s;
+  }
+  .stat:hover { transform:translateY(-3px); border-color:var(--border-light); box-shadow:var(--shadow-lg); }
+  .stat::before { content:""; position:absolute; inset:0 0 auto 0; height:2px; background:var(--grad); opacity:.7; }
+  .stat b { display:block; font-size:27px; font-weight:800; font-variant-numeric:tabular-nums; margin-top:6px;
+    background:linear-gradient(120deg,#fff,var(--accent)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
   .stat span { font-size:12px; color:var(--muted); }
-  .worker { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; }
-  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:8px; }
-  .idle { background:#22c55e; } .busy { background:#f59e0b; } .offline { background:#94a3b8; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
-  th { color:var(--muted); font-weight:500; }
-  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; }
-  .b-unassigned{background:#e0e7ff;color:#4338ca}.b-claimed{background:#fef3c7;color:#b45309}.b-in_progress{background:#bfdbfe;color:#1d4ed8}
-  .b-completed{background:#bbf7d0;color:#166534}.b-failed{background:#fecaca;color:#b91c1c}.b-superseded{background:#e2e8f0;color:#475569}.b-stale{background:#fde68a;color:#92400e}
-  .log { background:#0f172a; color:#7dd3fc; font-family:ui-monospace,Consolas,monospace; font-size:12px; padding:12px; border-radius:8px; max-height:360px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
-  .empty { color:var(--muted); font-size:13px; padding:12px; text-align:center; }
+  .stat .icon { position:absolute; top:14px; right:14px; color:var(--faint); opacity:.6; }
+  .stat .icon svg { width:18px; height:18px; }
+
+  /* ══════════ 通用卡片 ══════════ */
+  .card {
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px 20px; box-shadow:var(--shadow);
+    transition: border-color .25s;
+  }
+  .card:hover { border-color:var(--border-light); }
+  .card > h2 {
+    display:flex; align-items:center; gap:8px;
+    font-size:13px; font-weight:700; margin:0 0 14px;
+    color:var(--muted); text-transform:uppercase; letter-spacing:.8px;
+  }
+  .card > h2 svg { width:15px; height:15px; color:var(--primary-2); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px; }
+  @media (max-width: 980px) { .grid { grid-template-columns:1fr; } }
+  .spacer { height:18px; }
+
+  /* ══════════ 表单 ══════════ */
   form { display:flex; flex-direction:column; gap:10px; }
-  input, textarea, select { border:1px solid var(--border); border-radius:8px; padding:10px; font-size:14px; font-family:inherit; }
-  textarea { min-height:80px; resize:vertical; }
-  button { background:#2563eb; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; }
-  button:hover { background:#1d4ed8; }
-  .row { display:flex; gap:8px; align-items:center; }
-  .filters { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
-  .filters select, .filters input { font-size:13px; padding:6px 10px; }
-  .detail { margin-top:8px; background:#f1f5f9; border-radius:8px; padding:8px 12px; font-size:12px; }
+  .form-row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+  label.field { font-size:11px; color:var(--faint); display:flex; flex-direction:column; gap:6px; flex:1; min-width:140px; }
+  input, textarea, select {
+    width:100%;
+    background:var(--bg-soft); color:var(--text);
+    border:1px solid var(--border); border-radius:var(--radius-sm);
+    padding:10px 12px; font-size:13.5px; font-family:inherit;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input:focus, textarea:focus, select:focus {
+    outline:none; border-color:var(--primary);
+    box-shadow:0 0 0 3px rgba(99,102,241,.18);
+  }
+  textarea { min-height:76px; resize:vertical; }
+  input::placeholder, textarea::placeholder { color:var(--faint); }
+
+  /* ══════════ 按钮（组件化 + 波纹 + 按压反馈 + loading）══════════ */
+  .btn {
+    position:relative; overflow:hidden; isolation:isolate;
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    border:none; border-radius:var(--radius-sm); cursor:pointer;
+    padding:10px 18px; font-size:13.5px; font-weight:600; color:#fff;
+    background:var(--grad); box-shadow:0 2px 10px -2px rgba(99,102,241,.55);
+    transition: transform .12s ease, box-shadow .2s, filter .2s;
+  }
+  .btn:hover { filter:brightness(1.12); box-shadow:0 4px 16px -2px rgba(99,102,241,.7); }
+  .btn:active { transform:scale(.955); }
+  .btn:disabled { opacity:.55; cursor:not-allowed; transform:none; }
+  .btn svg { width:15px; height:15px; }
+  .btn-success { background:linear-gradient(135deg,#10b981,#34d399); box-shadow:0 2px 10px -2px rgba(52,211,153,.5); }
+  .btn-success:hover { box-shadow:0 4px 16px -2px rgba(52,211,153,.65); }
+  .btn-danger { background:linear-gradient(135deg,#ef4444,#f87171); box-shadow:0 2px 10px -2px rgba(248,113,113,.5); }
+  .btn-danger:hover { box-shadow:0 4px 16px -2px rgba(248,113,113,.65); }
+  .btn-ghost { background:transparent; color:var(--muted); box-shadow:none; border:1px solid var(--border); }
+  .btn-ghost:hover { color:var(--text); border-color:var(--border-light); box-shadow:none; filter:none; }
+  .btn-sm { padding:6px 12px; font-size:12.5px; border-radius:8px; }
+  .btn .spin { display:none; width:14px; height:14px; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%; animation:spin .6s linear infinite; }
+  .btn.loading .spin { display:inline-block; }
+  .btn.loading .lbl { opacity:.85; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .ripple { position:absolute; border-radius:50%; background:rgba(255,255,255,.45); transform:scale(0); animation:rip .55s ease-out; pointer-events:none; }
+  @keyframes rip { to { transform:scale(3); opacity:0; } }
+
+  /* ══════════ 徽章 ══════════ */
+  .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  .badge::before { content:""; width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .b-unassigned{background:rgba(99,102,241,.14);color:#a5b4fc}
+  .b-claimed{background:rgba(251,191,36,.13);color:#fcd34d}
+  .b-in_progress{background:rgba(59,130,246,.14);color:#93c5fd}
+  .b-completed{background:rgba(52,211,153,.13);color:#6ee7b7}
+  .b-failed{background:rgba(248,113,113,.13);color:#fca5a5}
+  .b-superseded{background:rgba(148,163,184,.14);color:#94a3b8}
+  .b-stale{background:rgba(253,224,71,.13);color:#fde047}
+  .s-low{background:rgba(148,163,184,.15);color:#94a3b8}
+  .s-medium{background:rgba(251,191,36,.13);color:#fcd34d}
+  .s-high{background:rgba(251,146,60,.15);color:#fdba74}
+  .s-critical{background:rgba(248,113,113,.15);color:#fca5a5; box-shadow:0 0 12px -4px rgba(248,113,113,.5);}
+
+  /* ══════════ 表格 ══════════ */
+  .table-wrap { overflow-x:auto; border-radius:var(--radius-sm); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th { color:var(--faint); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; }
+  tbody tr { transition:background .15s; }
+  tbody tr:hover { background:rgba(99,102,241,.07); }
+  td.cell-main { max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ══════════ 竞品卡片 ══════════ */
+  .comp-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+  .comp {
+    display:flex; flex-direction:column; gap:12px;
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px; transition: transform .25s, border-color .25s, box-shadow .25s;
+  }
+  .comp:hover { transform:translateY(-3px); border-color:var(--border-light); box-shadow:var(--shadow-lg); }
+  .comp .head { display:flex; align-items:center; gap:10px; }
+  .comp .avatar { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; font-weight:800; font-size:15px; color:#fff; background:var(--grad); flex-shrink:0; }
+  .comp .name { font-weight:700; font-size:14.5px; }
+  .comp .meta { font-size:11.5px; color:var(--faint); display:flex; align-items:center; gap:6px; }
+  .comp .statusdot { width:8px; height:8px; border-radius:50%; background:var(--faint); }
+  .comp .statusdot.idle { background:var(--success); }
+  .comp .statusdot.monitoring { background:var(--warn); animation:blink 1s infinite; }
+  .comp .statusdot.error { background:var(--danger); }
+  @keyframes blink { 50% { opacity:.35; } }
+  .comp .actions { display:flex; gap:8px; }
+  .comp .actions .btn { flex:1; }
+
+  /* ══════════ Worker 状态 ══════════ */
+  .worker-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }
+  .worker-item { display:flex; align-items:center; gap:10px; background:var(--bg-soft); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; }
+  .worker-item .wdot { width:9px; height:9px; border-radius:50%; }
+  .worker-item .idle { background:var(--success); } .worker-item .busy { background:var(--warn); animation:blink 1s infinite; } .worker-item .offline { background:var(--faint); }
+  .worker-item .wname { font-weight:600; font-size:13px; }
+  .worker-item .wmeta { font-size:11px; color:var(--faint); }
+
+  /* ══════════ 资产 / 通用行 ══════════ */
+  .item-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; background:var(--bg-soft); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:8px; transition:border-color .2s; }
+  .item-row:hover { border-color:var(--border-light); }
+  .item-row .mini { display:flex; align-items:center; gap:8px; min-width:0; }
+  .item-row .mini b { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ══════════ 对比矩阵 ══════════ */
+  .scorebar { display:flex; align-items:center; gap:10px; margin:7px 0; }
+  .scorebar .label { width:170px; font-size:12.5px; color:var(--muted); flex-shrink:0; }
+  .scorebar .tracks { flex:1; display:flex; gap:10px; }
+  .scorebar .track { flex:1; height:8px; background:var(--bg-soft); border-radius:99px; overflow:hidden; position:relative; }
+  .scorebar .fill { position:absolute; top:0; bottom:0; left:0; border-radius:99px; transition:width .7s cubic-bezier(.22,1,.36,1); }
+  .scorebar .fill.mine { background:linear-gradient(90deg,#6366f1,#8b5cf6); }
+  .scorebar .fill.comp { background:linear-gradient(90deg,#f59e0b,#f87171); }
+  .scorebar .num { width:86px; font-size:12px; color:var(--faint); text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0; }
+  .scorebar .legend { font-size:10.5px; color:var(--faint); display:flex; justify-content:space-between; margin-bottom:2px; }
+
+  /* ══════════ 战卡 ══════════ */
+  .bc-field { background:var(--bg-soft); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:10px; }
+  .bc-field .bc-label { font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.5px; margin-bottom:5px; display:flex; align-items:center; gap:6px; }
+  .bc-field .bc-val { font-size:13px; color:var(--text); line-height:1.6; }
+  .bc-pitch { font-style:italic; color:var(--accent); border-left:3px solid var(--primary-2); padding-left:12px; }
+
+  /* ══════════ 日志 ══════════ */
+  .log {
+    background:#070c1a; color:#7dd3fc; font-family:var(--mono); font-size:12px;
+    padding:14px; border-radius:var(--radius-sm); max-height:420px; overflow-y:auto;
+    white-space:pre-wrap; word-break:break-all; line-height:1.7;
+    border:1px solid var(--border); box-shadow:inset 0 0 30px rgba(0,0,0,.35);
+  }
+  .log::-webkit-scrollbar { width:8px; } .log::-webkit-scrollbar-thumb { background:var(--border-light); border-radius:99px; }
+
+  /* ══════════ 空态 / 详情 ══════════ */
+  .empty { color:var(--faint); font-size:13px; padding:20px; text-align:center; }
+  .filters { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .filters input, .filters select { width:auto; }
+  .toast {
+    position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--card-hover); color:var(--text); border:1px solid var(--border-light);
+    padding:11px 22px; border-radius:12px; font-size:13.5px; z-index:99;
+    opacity:0; pointer-events:none; transition:all .3s ease; box-shadow:var(--shadow-lg);
+  }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .detail-block { margin-top:10px; background:var(--bg-soft); border-radius:var(--radius-sm); padding:10px 14px; font-size:12.5px; color:var(--muted); }
+
+  /* ══════════ 响应式 ══════════ */
+  @media (max-width: 720px) {
+    header { padding:12px 16px; }
+    nav.tabs { padding:8px 16px 0; }
+    main { padding:18px 16px 50px; }
+    .clock { display:none; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>Agent Swarm</h1>
-  <span class="tag">多 Agent 任务编排</span>
-  <span class="tag" id="conn">连接中…</span>
-</header>
-<main>
-  <div class="stats" id="stats"></div>
-
-  <div class="grid">
+  <div class="brand">
+    <div class="brand-logo"><i data-lucide="radar"></i></div>
     <div>
-      <div class="card">
-        <h2>创建任务</h2>
-        <form id="create-form">
-          <input id="f-title" placeholder="标题" required>
-          <textarea id="f-prompt" placeholder="Prompt（发给 Agent 执行），可写相对路径引用资产，如 读取 ./sales.csv" required></textarea>
-          <select id="f-attachments" multiple title="附加资产（可多选，Ctrl+点击）">
-            <option value="">无附加资产</option>
-          </select>
-          <div class="row">
-            <select id="f-priority">
-              <option value="5">优先级 5（默认）</option>
-              <option value="1">1 最高</option>
-              <option value="3">3 高</option>
-              <option value="8">8 低</option>
-              <option value="10">10 最低</option>
-            </select>
-            <button type="submit">创建</button>
-          </div>
-        </form>
-      </div>
+      <h1>竞品情报</h1>
+      <small>多 Agent 市场研究系统</small>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="clock" id="clock"></span>
+    <button class="btn btn-ghost btn-sm" onclick="refreshAll()" title="刷新全部面板"><i data-lucide="refresh-cw"></i><span>刷新</span></button>
+    <span class="conn" id="conn"><span class="pulse"></span><span id="conn-text">连接中…</span></span>
+  </div>
+</header>
 
-      <div class="card" style="margin-top:24px">
-        <h2>资产库</h2>
-        <form id="asset-form">
-          <div class="row">
-            <input type="file" id="f-asset-file">
-            <button type="submit">上传资产</button>
-          </div>
-        </form>
-        <div id="assets" style="margin-top:12px"><div class="empty">暂无资产</div></div>
-      </div>
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="overview" onclick="showTab('overview')"><i data-lucide="layout-dashboard"></i>总览</button>
+  <button class="tab-btn" data-tab="ci" onclick="showTab('ci')"><i data-lucide="radar"></i>竞品情报</button>
+  <button class="tab-btn" data-tab="tasks" onclick="showTab('tasks')"><i data-lucide="list-checks"></i>任务中心</button>
+  <button class="tab-btn" data-tab="assets" onclick="showTab('assets')"><i data-lucide="folder-open"></i>资产库</button>
+  <button class="tab-btn" data-tab="system" onclick="showTab('system')"><i data-lucide="terminal"></i>系统</button>
+</nav>
 
-      <div class="card" style="margin-top:24px">
-        <h2>Worker 状态</h2>
-        <div id="workers"><div class="empty">暂无 Worker</div></div>
+<main>
+  <!-- ══════════ 总览 ══════════ -->
+  <section class="panel active" id="tab-overview">
+    <div class="stats" id="stats"></div>
+    <div class="card">
+      <h2><i data-lucide="trophy"></i>竞品管理</h2>
+      <form id="comp-form" class="form-row">
+        <label class="field">竞品名称<input id="c-name" placeholder="如 Nike / 安踏 / 飞书" required></label>
+        <label class="field">官网 URL<input id="c-website" placeholder="https://…（可选）"></label>
+        <label class="field" style="flex:1.6">监控页面（逗号分隔）
+          <input id="c-urls" placeholder="https://…/pricing, https://…/careers">
+        </label>
+        <button type="submit" class="btn btn-success"><i data-lucide="plus"></i><span class="lbl">注册竞品</span></button>
+      </form>
+      <div class="comp-list" id="competitors" style="margin-top:14px"><div class="empty">暂无竞品，注册一个开始监控</div></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="card">
+      <h2><i data-lucide="activity"></i>最近竞品变化</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>严重度</th><th>类型</th><th>标题</th><th>竞品</th><th>时间</th></tr></thead>
+          <tbody id="ci-changes"></tbody>
+        </table>
       </div>
     </div>
+  </section>
 
-    <div>
+  <!-- ══════════ 竞品情报 ══════════ -->
+  <section class="panel" id="tab-ci">
+    <div class="grid">
       <div class="card">
-        <h2>实时日志</h2>
+        <h2><i data-lucide="bar-chart-3"></i>对比矩阵 <small id="matrix-comp" style="color:var(--faint);text-transform:none"></small></h2>
+        <div id="ci-matrix"><div class="empty">尚未生成对比矩阵（触发「分析」后自动产出）</div></div>
+      </div>
+      <div class="card">
+        <h2><i data-lucide="swords"></i>销售战卡 Battlecard</h2>
+        <div id="ci-battlecard"><div class="empty">尚未生成战卡</div></div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h2><i data-lucide="bell-ring"></i>告警记录</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>状态</th><th>竞品</th><th>严重度</th><th>标题</th><th>时间</th></tr></thead>
+            <tbody id="ci-alerts"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2><i data-lucide="search"></i>调研洞察</h2>
+        <div id="ci-insights"><div class="empty">暂无洞察（由 research 阶段产出）</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ 任务中心 ══════════ -->
+  <section class="panel" id="tab-tasks">
+    <div class="grid">
+      <div class="card">
+        <h2><i data-lucide="plus-circle"></i>创建任务</h2>
+        <form id="create-form">
+          <label class="field">标题<input id="f-title" placeholder="任务标题" required></label>
+          <label class="field">Prompt（可写相对路径引用资产，如 读取 ./sales.csv）
+            <textarea id="f-prompt" placeholder="发给 Agent 执行的任务指令" required></textarea>
+          </label>
+          <label class="field">附加资产（可多选 Ctrl+点击）<select id="f-attachments" multiple><option value="">无附加资产</option></select></label>
+          <div class="form-row">
+            <label class="field" style="flex:1">优先级<select id="f-priority">
+              <option value="5">5 默认</option><option value="1">1 最高</option>
+              <option value="3">3 高</option><option value="8">8 低</option><option value="10">10 最低</option>
+            </select></label>
+            <button type="submit" class="btn"><i data-lucide="send"></i><span class="lbl">创建任务</span></button>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h2><i data-lucide="cpu"></i>Worker 状态</h2>
+        <div class="worker-list" id="workers"><div class="empty">暂无 Worker</div></div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="card">
+      <h2><i data-lucide="list-checks"></i>任务列表</h2>
+      <div class="filters">
+        <select id="f-status">
+          <option value="">全部状态</option>
+          <option value="unassigned">unassigned</option>
+          <option value="claimed">claimed</option>
+          <option value="in_progress">in_progress</option>
+          <option value="completed">completed</option>
+          <option value="failed">failed</option>
+          <option value="superseded">superseded</option>
+        </select>
+        <input id="f-q" placeholder="搜索标题 / ID" style="width:220px">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状态</th><th>标题</th><th>优先级</th><th>Worker</th><th>创建时间</th><th>结果</th></tr></thead>
+          <tbody id="tasks"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ 资产库 ══════════ -->
+  <section class="panel" id="tab-assets">
+    <div class="card">
+      <h2><i data-lucide="upload-cloud"></i>上传资产</h2>
+      <form id="asset-form" class="form-row">
+        <label class="field">选择文件<input type="file" id="f-asset-file" style="padding:6px"></label>
+        <button type="submit" class="btn"><i data-lucide="upload"></i><span class="lbl">上传资产</span></button>
+      </form>
+      <div id="assets" style="margin-top:14px"><div class="empty">暂无资产</div></div>
+    </div>
+  </section>
+
+  <!-- ══════════ 系统 ══════════ -->
+  <section class="panel" id="tab-system">
+    <div class="grid">
+      <div class="card">
+        <h2><i data-lucide="terminal"></i>实时日志</h2>
         <div class="log" id="log">等待事件流…</div>
       </div>
+      <div class="card">
+        <h2><i data-lucide="user-cog"></i>我方产品画像</h2>
+        <div id="profile"><div class="empty">加载中…</div></div>
+      </div>
     </div>
-  </div>
-
-  <div class="card" style="margin-top:24px">
-    <h2>任务列表</h2>
-    <div class="filters">
-      <select id="f-status">
-        <option value="">全部状态</option>
-        <option value="unassigned">unassigned</option>
-        <option value="claimed">claimed</option>
-        <option value="in_progress">in_progress</option>
-        <option value="completed">completed</option>
-        <option value="failed">failed</option>
-        <option value="superseded">superseded</option>
-      </select>
-      <input id="f-q" placeholder="搜索标题/ID" style="width:220px">
-    </div>
-    <table>
-      <thead><tr><th>状态</th><th>标题</th><th>优先级</th><th>Worker</th><th>创建时间</th><th>结果</th></tr></thead>
-      <tbody id="tasks"></tbody>
-    </table>
-  </div>
+  </section>
 </main>
+
+<div class="toast" id="toast"></div>
 
 <script>
 const API_KEY = 'dev-123123';
@@ -126,47 +447,124 @@ const BASE = '';
 let events = [];
 let statusFilter = '';
 let qFilter = '';
-let taskCache = {};
+let selectedCompId = null;
+const compCache = {};
 
 const $ = (id) => document.getElementById(id);
 const fmt = (t) => t ? new Date(t).toLocaleString() : '-';
 const esc = (s) => (s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const head = { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' };
 
+function alertTitle(payload) {
+  if (!payload) return '变化通知';
+  const m = payload.match(/<h2[^>]*>(.*?)<\/h2>/);
+  return m ? m[1].replace(/<[^>]+>/g, '').trim().slice(0, 40) : '变化通知';
+}
+
+// ── 轻提示 toast ──
+let toastTimer = null;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+// 成功庆祝（CDN 可用时）
+function celebrate() {
+  if (typeof confetti === 'function') {
+    confetti({ particleCount: 70, spread: 75, origin: { y: 0.7 }, zIndex: 999 });
+  }
+}
+
+// ── 按钮波纹 + loading 工具 ──
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn');
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
+  const rip = document.createElement('span');
+  rip.className = 'ripple';
+  const size = Math.max(rect.width, rect.height);
+  rip.style.width = rip.style.height = size + 'px';
+  rip.style.left = (e.clientX - rect.left - size / 2) + 'px';
+  rip.style.top = (e.clientY - rect.top - size / 2) + 'px';
+  btn.appendChild(rip);
+  setTimeout(() => rip.remove(), 560);
+});
+function btnLoading(btn, on) {
+  if (!btn) return;
+  if (on) { btn.classList.add('loading'); btn.disabled = true; }
+  else { btn.classList.remove('loading'); btn.disabled = false; }
+}
+
+// ── API ──
 async function api(path, opts = {}) {
   const res = await fetch(BASE + path, { headers: head, ...opts });
   if (!res.ok) throw new Error(await res.text());
   return res.status === 204 ? null : res.json();
 }
-
-async function loadAll() {
-  await Promise.all([loadStats(), loadWorkers(), loadTasks(), loadAssets()]);
+async function refreshAll() {
+  await loadAll();
+  toast('已刷新全部面板');
 }
 
-// ── 资产库 ──
-let assetList = [];
+// ── Tab 切换 ──
+function showTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + name));
+  // 按需刷新该 Tab 数据
+  if (name === 'overview') { void loadStats(); void loadCompetitors(); }
+  if (name === 'ci') { void loadCiDetail(selectedCompId); void loadCiAlerts(); void loadCiInsights(); }
+  if (name === 'tasks') { void loadTasks(); void loadWorkers(); }
+  if (name === 'assets') { void loadAssets(); }
+  if (name === 'system') { void loadProfile(); }
+}
+
+async function loadAll() {
+  await Promise.all([loadStats(), loadWorkers(), loadTasks(), loadAssets(), loadCompetitors(), loadCiAlerts(), loadCiInsights(), loadProfile()]);
+}
+
+// ── 统计 ──
+const STAT_ICONS = { '任务总数':'layers','待认领':'inbox','执行中':'loader','已完成':'check-circle-2','失败':'x-circle','记忆':'brain','Worker':'cpu','竞品':'trophy','变化':'activity','告警':'bell-ring' };
+async function loadStats() {
+  try {
+    const s = await api('/api/stats');
+    const rows = [
+      ['任务总数', s.tasks_total], ['待认领', s.tasks_by_status.unassigned ?? 0],
+      ['执行中', (s.tasks_by_status.in_progress ?? 0) + (s.tasks_by_status.claimed ?? 0)],
+      ['已完成', s.tasks_by_status.completed ?? 0], ['失败', s.tasks_by_status.failed ?? 0],
+      ['记忆', s.memories_total], ['Worker', s.agents.total],
+      ['竞品', s.ci_competitors ?? 0], ['变化', s.ci_changes ?? 0], ['告警', s.ci_alerts ?? 0],
+    ];
+    $('stats').innerHTML = rows.map(([k, v]) => `
+      <div class="stat">
+        <div class="icon"><i data-lucide="${STAT_ICONS[k] || 'circle'}"></i></div>
+        <span>${k}</span><b>${v}</b>
+      </div>`).join('');
+    lucideRefresh();
+  } catch {}
+}
+
+// ── 资产 ──
 async function loadAssets() {
   try {
     const { assets } = await api('/api/assets');
-    assetList = assets;
-    // 填充"附加资产"多选下拉
     const sel = $('f-attachments');
     const keep = new Set(Array.from(sel.selectedOptions).map((o) => o.value));
     sel.innerHTML = '<option value="">无附加资产</option>' + assets.map((a) =>
       `<option value="${a.id}" ${keep.has(a.id) ? 'selected' : ''}>${esc(a.original_name)} (${fmtSize(a.size)})</option>`
     ).join('');
-
-    // 资产列表卡片
     $('assets').innerHTML = assets.length
       ? assets.map((a) => `
-        <div class="worker">
-          <span><b>${esc(a.original_name)}</b> <small style="color:var(--muted)">${fmtSize(a.size)}</small></span>
-          <span class="row">
-            <a href="${BASE}/api/assets/${a.id}" target="_blank" style="font-size:12px;color:#2563eb">下载</a>
-            <button style="padding:4px 8px;font-size:12px;background:#dc2626" onclick="delAsset('${a.id}')">删</button>
+        <div class="item-row">
+          <span class="mini"><i data-lucide="file-text" style="width:15px;height:15px;color:var(--accent)"></i><b>${esc(a.original_name)}</b><small style="color:var(--faint)">${fmtSize(a.size)}</small></span>
+          <span style="display:flex;gap:8px">
+            <a href="${BASE}/api/assets/${a.id}" target="_blank" class="btn btn-ghost btn-sm"><i data-lucide="download"></i>下载</a>
+            <button class="btn btn-danger btn-sm" onclick="delAsset('${a.id}')"><i data-lucide="trash-2"></i>删除</button>
           </span>
         </div>`).join('')
       : '<div class="empty">暂无资产</div>';
+    lucideRefresh();
   } catch {}
 }
 function fmtSize(n) {
@@ -175,60 +573,48 @@ function fmtSize(n) {
   return n + ' B';
 }
 async function delAsset(id) {
-  try {
-    await api('/api/assets/' + id, { method: 'DELETE' });
-    await loadAssets();
-  } catch (err) { addLog(`删除失败: ${err.message}`); }
+  try { await api('/api/assets/' + id, { method: 'DELETE' }); await loadAssets(); toast('资产已删除'); }
+  catch (err) { toast(`删除失败: ${err.message}`); }
 }
 $('asset-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const file = $('f-asset-file').files[0];
   if (!file) return;
-  const fd = new FormData();
-  fd.append('file', file);
+  const btn = e.target.querySelector('button');
+  btnLoading(btn, true);
   try {
     const res = await fetch(`${BASE}/api/assets?filename=${encodeURIComponent(file.name)}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${API_KEY}` }, // 不设 Content-Type，fetch 自动带 boundary
-      body: file,
+      method: 'POST', headers: { 'Authorization': `Bearer ${API_KEY}` }, body: file,
     });
     if (!res.ok) throw new Error(await res.text());
-    addLog(`资产上传成功: ${file.name}`);
+    toast(`资产上传成功: ${file.name}`);
     $('f-asset-file').value = '';
     await loadAssets();
-  } catch (err) { addLog(`上传失败: ${err.message}`); }
+  } catch (err) { toast(`上传失败: ${err.message}`); }
+  finally { btnLoading(btn, false); }
 });
-async function loadStats() {
-  try {
-    const s = await api('/api/stats');
-    const rows = [
-      ['任务总数', s.tasks_total],
-      ['待认领', s.tasks_by_status.unassigned ?? 0],
-      ['执行中', (s.tasks_by_status.in_progress ?? 0) + (s.tasks_by_status.claimed ?? 0)],
-      ['已完成', s.tasks_by_status.completed ?? 0],
-      ['失败', s.tasks_by_status.failed ?? 0],
-      ['记忆', s.memories_total],
-      ['Worker', s.agents.total],
-    ];
-    $('stats').innerHTML = rows.map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
-  } catch {}
-}
+
+// ── Worker ──
 async function loadWorkers() {
   try {
     const { agents } = await api('/api/agents');
     if (!agents.length) { $('workers').innerHTML = '<div class="empty">暂无 Worker</div>'; return; }
     $('workers').innerHTML = agents.map((a) => `
-      <div class="worker">
-        <span><span class="dot ${a.status}"></span><b>${esc(a.name)}</b> <small>(${a.role})</small></span>
-        <span style="color:var(--muted);font-size:12px">${a.status}${a.current_task_id ? ' · task ' + a.current_task_id.slice(0,8) : ''}</span>
+      <div class="worker-item">
+        <span class="wdot ${a.status}"></span>
+        <div style="min-width:0">
+          <div class="wname">${esc(a.name)}</div>
+          <div class="wmeta">${a.status}${a.current_task_id ? ' · ' + a.current_task_id.slice(0,8) : ''}</div>
+        </div>
       </div>`).join('');
   } catch {}
 }
+
+// ── 任务 ──
 async function loadTasks() {
   const params = new URLSearchParams({ size: '50' });
   if (statusFilter) params.set('status', statusFilter);
   const { tasks } = await api('/api/tasks?' + params);
-  tasks.forEach((t) => taskCache[t.id] = t);
   renderTasks(tasks);
 }
 function renderTasks(tasks) {
@@ -239,49 +625,245 @@ function renderTasks(tasks) {
     ? list.map((t) => `
       <tr>
         <td><span class="badge b-${t.status}">${t.status}</span></td>
-        <td title="${esc(t.prompt)}">${esc(t.title)}</td>
+        <td class="cell-main" title="${esc(t.prompt)}">${esc(t.title)}</td>
         <td>${t.priority}</td>
         <td>${t.agent_id ? esc(t.agent_id) : '-'}</td>
         <td>${fmt(t.created_at)}</td>
-        <td style="max-width:200px">${esc((t.result || t.error || '').slice(0, 40))}</td>
+        <td class="cell-main" style="max-width:200px">${esc((t.result || t.error || '').slice(0, 40))}</td>
       </tr>`).join('')
     : '<tr><td colspan="6" class="empty">无任务</td></tr>';
 }
-
 $('create-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const attachments = Array.from($('f-attachments').selectedOptions)
-    .map((o) => o.value)
-    .filter(Boolean);
+  const attachments = Array.from($('f-attachments').selectedOptions).map((o) => o.value).filter(Boolean);
   const body = {
-    title: $('f-title').value.trim(),
-    prompt: $('f-prompt').value.trim(),
-    priority: Number($('f-priority').value),
-    ...(attachments.length ? { attachments } : {}),
+    title: $('f-title').value.trim(), prompt: $('f-prompt').value.trim(),
+    priority: Number($('f-priority').value), ...(attachments.length ? { attachments } : {}),
   };
   if (!body.title || !body.prompt) return;
+  const btn = e.target.querySelector('button');
+  btnLoading(btn, true);
   try {
     await api('/api/tasks', { method: 'POST', body: JSON.stringify(body) });
-    $('f-title').value = ''; $('f-prompt').value = '';
-    $('f-attachments').selectedIndex = 0;
+    $('f-title').value = ''; $('f-prompt').value = ''; $('f-attachments').selectedIndex = 0;
     await loadAll();
-    addLog(`任务已创建${attachments.length ? `（附加 ${attachments.length} 个资产）` : ''}`);
-  } catch (err) { addLog(`创建失败: ${err.message}`); }
+    toast(`任务已创建${attachments.length ? `（附加 ${attachments.length} 个资产）` : ''}`);
+    celebrate();
+  } catch (err) { toast(`创建失败: ${err.message}`); }
+  finally { btnLoading(btn, false); }
 });
 $('f-status').addEventListener('change', (e) => { statusFilter = e.target.value; void loadTasks(); });
 $('f-q').addEventListener('input', (e) => { qFilter = e.target.value; void loadTasks(); });
+
+// ── 竞品 ──
+async function loadCompetitors() {
+  try {
+    const { competitors } = await api('/api/competitors');
+    if (!competitors.length) { $('competitors').innerHTML = '<div class="empty">暂无竞品，注册一个开始监控</div>'; return; }
+    competitors.forEach((c) => compCache[c.id] = c);
+    $('competitors').innerHTML = competitors.map((c) => `
+      <div class="comp">
+        <div class="head">
+          <div class="avatar">${esc((c.name || '?').slice(0, 1))}</div>
+          <div style="min-width:0">
+            <div class="name">${esc(c.name)}</div>
+            <div class="meta">
+              <span class="statusdot ${c.status === 'idle' ? 'idle' : c.status === 'monitoring' ? 'monitoring' : c.status === 'error' ? 'error' : ''}"></span>
+              ${esc(c.status)}${c.last_checked_at ? ' · ' + fmt(c.last_checked_at) : ''}
+              ${c.enabled ? '' : '<span class="badge b-failed">停用</span>'}
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm" id="btn-analyze-${c.id}" onclick="runAnalyze('${c.id}', this)"><i data-lucide="zap"></i><span class="lbl">分析</span></button>
+          <button class="btn btn-ghost btn-sm" id="btn-monitor-${c.id}" onclick="runMonitor('${c.id}', this)"><i data-lucide="eye"></i><span class="lbl">监控</span></button>
+          <button class="btn btn-ghost btn-sm" onclick="loadCiDetail('${c.id}'); showTab('ci')"><i data-lucide="arrow-right"></i>详情</button>
+        </div>
+      </div>`).join('');
+    if (!selectedCompId || !competitors.some((c) => c.id === selectedCompId)) selectedCompId = competitors[0].id;
+    await loadCiDetail(selectedCompId);
+    lucideRefresh();
+  } catch {}
+}
+async function runAnalyze(id, btn) {
+  btnLoading(btn, true);
+  try {
+    await api(`/api/competitors/${id}/analyze`, { method: 'POST', body: '{}' });
+    toast(`已触发 ${compCache[id]?.name || id.slice(0,8)} 全流水线分析`);
+  } catch (err) { toast(`触发失败: ${err.message}`); }
+  finally { btnLoading(btn, false); }
+}
+async function runMonitor(id, btn) {
+  btnLoading(btn, true);
+  try {
+    await api(`/api/competitors/${id}/monitor`, { method: 'POST', body: '{}' });
+    toast(`已触发 ${compCache[id]?.name || id.slice(0,8)} 监控`);
+  } catch (err) { toast(`触发失败: ${err.message}`); }
+  finally { btnLoading(btn, false); }
+}
+$('comp-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = { name: $('c-name').value.trim(), website: $('c-website').value.trim() || undefined };
+  const urls = $('c-urls').value.split(',').map((u) => u.trim()).filter(Boolean);
+  if (urls.length) body.monitor_urls = urls;
+  if (!body.name) return;
+  const btn = e.target.querySelector('button');
+  btnLoading(btn, true);
+  try {
+    const r = await api('/api/competitors', { method: 'POST', body: JSON.stringify(body) });
+    toast(`竞品已注册: ${r.competitor.name}`);
+    $('c-name').value = ''; $('c-website').value = ''; $('c-urls').value = '';
+    await loadCompetitors();
+    celebrate();
+  } catch (err) { toast(`注册失败: ${err.message}`); }
+  finally { btnLoading(btn, false); }
+});
+
+// ── 竞品情报详情 ──
+async function loadCiDetail(id) {
+  if (!id) return;
+  try {
+    const d = await api(`/api/ci/competitors/${id}/latest`);
+    selectedCompId = id;
+    renderCiChanges(d.changes);
+    renderCiMatrix(d.matrix, d.competitor);
+    renderCiBattlecard(d.battlecard);
+  } catch {}
+}
+function renderCiChanges(changes) {
+  $('ci-changes').innerHTML = (changes && changes.length)
+    ? changes.map((c) => `
+      <tr>
+        <td><span class="badge s-${c.severity}">${c.severity}</span></td>
+        <td>${esc(c.change_type)}</td>
+        <td class="cell-main" title="${esc(c.summary || '')}">${esc(c.title)}</td>
+        <td>${esc((compCache[c.competitor_id] || {}).name || c.competitor_id.slice(0,8))}</td>
+        <td>${fmt(c.created_at)}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="5" class="empty">暂无变化记录</td></tr>';
+}
+function renderCiMatrix(matrix, competitor) {
+  $('matrix-comp').textContent = competitor ? `· vs ${competitor.name}` : '';
+  $('ci-matrix').innerHTML = (matrix && matrix.dimensions && matrix.dimensions.length)
+    ? matrix.dimensions.map((d, i) => `
+      <div>
+        <div class="legend"><span>我方</span><span>${esc(d.dimension)}</span><span>竞品</span></div>
+        <div class="scorebar">
+          <span class="label">${esc(d.dimension)}</span>
+          <span class="tracks">
+            <span class="track"><span class="fill mine" id="fill-m-${i}"></span></span>
+            <span class="track"><span class="fill comp" id="fill-c-${i}"></span></span>
+          </span>
+          <span class="num">我 ${d.our_score} · 竞 ${d.competitor_score}</span>
+        </div>
+      </div>`).join('')
+    : '<div class="empty">尚未生成对比矩阵</div>';
+  // 动画：先渲染 0 宽再过渡到目标宽度
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      matrix?.dimensions?.forEach((d, i) => {
+        const m = $('fill-m-' + i); const c = $('fill-c-' + i);
+        if (m) m.style.width = d.our_score * 10 + '%';
+        if (c) c.style.width = d.competitor_score * 10 + '%';
+      });
+    }, 50);
+  });
+}
+function renderCiBattlecard(bc) {
+  $('ci-battlecard').innerHTML = bc
+    ? `<div>
+        ${bc.quality_score ? `<div style="margin-bottom:12px"><span class="badge ${bc.quality_score >= 7 ? 'b-completed' : 'b-failed'}">质检 ${bc.quality_score}/10</span>${bc.quality_detail ? ` <small style="color:var(--faint)">${esc(bc.quality_detail.slice(0,60))}</small>` : ''}</div>` : ''}
+        ${field('我方优势', bc.content.our_strengths, 'shield-check')}
+        ${field('我方劣势', bc.content.our_weaknesses, 'shield-x')}
+        ${field('竞品优势', bc.content.competitor_strengths, 'flame')}
+        ${field('竞品劣势', bc.content.competitor_weaknesses, 'cloud-off')}
+        ${field('关键差异化', bc.content.key_differentiators, 'gauge')}
+        ${Object.keys(bc.content.objection_handling || {}).length ? `
+          <div class="bc-field"><div class="bc-label"><i data-lucide="message-circle" style="width:13px;height:13px"></i>异议处理话术</div>
+          ${Object.entries(bc.content.objection_handling).map(([k, v]) => `<div style="margin-bottom:8px"><b>${esc(k)}</b><div style="color:var(--muted);font-size:12.5px">${esc(v)}</div></div>`).join('')}
+          </div>` : ''}
+        ${bc.content.elevator_pitch ? `<div class="bc-field bc-pitch"><div class="bc-label">电梯陈述</div><div class="bc-val">${esc(bc.content.elevator_pitch)}</div></div>` : ''}
+      </div>`
+    : '<div class="empty">尚未生成战卡</div>';
+  lucideRefresh();
+}
+function field(label, arr, icon) {
+  if (!arr || !arr.length) return '';
+  return `<div class="bc-field"><div class="bc-label"><i data-lucide="${icon}" style="width:13px;height:13px"></i>${label}</div><div class="bc-val">${arr.map(esc).join(' · ')}</div></div>`;
+}
+
+// ── 告警 ──
+async function loadCiAlerts() {
+  try {
+    const { alerts } = await api('/api/ci/alerts?limit=20');
+    $('ci-alerts').innerHTML = alerts.length
+      ? alerts.map((a) => `
+        <tr>
+          <td><span class="badge ${a.status === 'sent' ? 'b-completed' : a.status === 'failed' ? 'b-failed' : 'b-claimed'}">${a.status}</span></td>
+          <td>${esc(a.competitor_id ? a.competitor_id.slice(0,8) : '-')}</td>
+          <td>${a.change_id ? 'high/critical' : '-'}</td>
+          <td class="cell-main" style="max-width:220px">${esc(alertTitle(a.payload))}</td>
+          <td>${fmt(a.created_at)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" class="empty">暂无告警记录</td></tr>';
+  } catch {}
+}
+
+// ── 洞察 ──
+async function loadCiInsights() {
+  try {
+    const d = await api(`/api/ci/competitors/${selectedCompId || ''}/insights`);
+    const list = d.insights || [];
+    $('ci-insights').innerHTML = list.length
+      ? list.map((i) => `
+        <div class="bc-field">
+          <div class="bc-label"><i data-lucide="lightbulb" style="width:13px;height:13px"></i>${esc(i.topic)} <small style="color:var(--faint);text-transform:none">置信度 ${i.confidence}</small></div>
+          <div class="bc-val">${esc(i.summary)}</div>
+        </div>`).join('')
+      : '<div class="empty">暂无洞察（由 research 阶段产出）</div>';
+    lucideRefresh();
+  } catch {}
+}
+
+// ── 我方画像 ──
+async function loadProfile() {
+  try {
+    const { profile } = await api('/api/ci/profile');
+    $('profile').innerHTML = `
+      <div class="bc-field"><div class="bc-label"><i data-lucide="building-2" style="width:13px;height:13px"></i>产品名称</div><div class="bc-val">${esc(profile.name)}</div></div>
+      <div class="bc-field"><div class="bc-label">定位</div><div class="bc-val">${esc(profile.positioning) || '（未配置 OUR_PRODUCT_POSITIONING）'}</div></div>
+      <div class="bc-field"><div class="bc-label">目标市场</div><div class="bc-val">${esc(profile.targetMarket) || '（未配置 OUR_TARGET_MARKET）'}</div></div>
+      ${profile.website ? `<div class="bc-field"><div class="bc-label">官网</div><div class="bc-val">${esc(profile.website)}</div></div>` : ''}
+    `;
+    lucideRefresh();
+  } catch {}
+}
+
+// ── 实时时钟 ──
+setInterval(() => {
+  $('clock').textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}, 1000);
+
+// ── Lucide 图标（CDN 加载失败则降级为空，不影响功能）──
+function lucideRefresh() {
+  try { if (window.lucide) lucide.createIcons(); } catch {}
+}
+if (!window.lucide) {
+  // 兜底：CDN 未加载时隐藏图标占位
+  document.head.appendChild(Object.assign(document.createElement('style'), { textContent: 'i[data-lucide]{display:none}' }));
+}
 
 // ── WebSocket 事件流 ──
 function addLog(msg) {
   const log = $('log');
   log.textContent += msg + '\n';
-  log.scrollTop = log.scrollHeight;
+  if (log.scrollHeight - log.scrollTop > 40) log.scrollTop = log.scrollHeight;
 }
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws = new WebSocket(`${proto}//${location.host}/ws`);
-  ws.onopen = () => { $('conn').textContent = '● 已连接'; };
-  ws.onclose = () => { $('conn').textContent = '○ 已断开，重连中'; setTimeout(connect, 2000); };
+  ws.onopen = () => { $('conn').classList.add('on'); $('conn').classList.remove('off'); $('conn-text').textContent = '已连接'; };
+  ws.onclose = () => { $('conn').classList.remove('on'); $('conn').classList.add('off'); $('conn-text').textContent = '已断开，重连中'; setTimeout(connect, 2000); };
   ws.onmessage = (msg) => {
     try {
       const data = JSON.parse(msg.data);
@@ -289,13 +871,13 @@ function connect() {
         const ev = data.event;
         events.push(ev);
         addLog(`[${fmt(ev.created_at)}] ${ev.type} ${ev.task_id ? ev.task_id.slice(0,8) : ''} ${ev.agent_id ? '(' + ev.agent_id + ')' : ''}`);
-        // 增量刷新相关面板
         void loadStats();
         void loadWorkers();
         if (ev.type.startsWith('task_')) void loadTasks();
         if (ev.type === 'task_completed' || ev.type === 'task_failed') void loadTasks();
-      } else {
-        addLog(`[ws] ${data.type}`);
+        if (ev.type.startsWith('ci_')) {
+          void loadCompetitors(); void loadCiAlerts(); void loadCiInsights();
+        }
       }
     } catch {}
   };
@@ -303,6 +885,7 @@ function connect() {
 
 loadAll().catch(() => {});
 connect();
+lucideRefresh();
 </script>
 </body>
 </html>

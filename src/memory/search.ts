@@ -16,7 +16,7 @@ export interface SearchHit {
 
 export async function searchMemories(query: string, topK: number): Promise<SearchHit[]> {
   const [qVec] = await embedTexts([query]);
-  const memories = allMemoriesWithVector();
+  const memories = await allMemoriesWithVector();
   if (memories.length === 0) return [];
 
   const hits = memories.map((m) => ({

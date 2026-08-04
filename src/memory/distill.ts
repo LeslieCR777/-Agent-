@@ -39,7 +39,7 @@ export async function distillTaskExperience(input: {
     if (!extracted.trim()) return;
 
     const [vector] = await embedTexts([extracted]);
-    const memory = createMemory({
+    const memory = await createMemory({
       content: extracted.trim().slice(0, 2000),
       embedding: vector,
       source_task_id: taskId,

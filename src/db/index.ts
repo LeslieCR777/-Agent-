@@ -1,78 +1,115 @@
-import { DatabaseSync } from 'node:sqlite';
-import { readFileSync, mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import mysql, { type Pool, type PoolConnection } from 'mysql2/promise';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 
 /**
- * 数据库单例。API Server 是数据库唯一持有者（文档 2.1 架构基石）。
+ * 查询行类型。mysql2 的 execute 泛型约束是 RowDataPacket，但我们返回业务对象，
+ * 用宽松的 Record<string, any> 让 execute<Row[]> 满足约束、返回可断言成业务类型。
+ */
+export type Row = Record<string, any>;
+
+/**
+ * 数据库单例（MySQL）。API Server 是数据库唯一持有者（文档 2.1 架构基石）。
  * Worker/Lead 禁止 import 本模块，一律走 HTTP（见 6.1 依赖规则）。
+ *
+ * 关键机制：
+ * - 连接池：mysql2/promise Pool，所有语句经 pool/连接执行（异步）
+ * - 事务：withTransaction 用 AsyncLocalStorage 传播「当前事务连接」，
+ *   嵌套 withTransaction 复用同一连接（join 外层事务），最外层 commit/rollback。
+ * - 原子性：BEGIN IMMEDIATE（SQLite）→ START TRANSACTION（MySQL）。
+ *   认领任务等竞争操作在事务内用 SELECT ... FOR UPDATE SKIP LOCKED 选行。
  */
 
-let db: DatabaseSync | null = null;
+let pool: Pool | null = null;
 
-export function getDb(): DatabaseSync {
-  if (!db) throw new Error('DB not initialized — call initDb() first');
-  return db;
+export function getPool(): Pool {
+  if (!pool) throw new Error('DB not initialized — call initDb() first');
+  return pool;
 }
 
-/** 关闭连接（测试清理用；正式流程进程退出时自动释放） */
-export function closeDb(): void {
-  if (db) {
-    db.close();
-    db = null;
+/** 事务上下文：当前连接 + 嵌套深度（AsyncLocalStorage 传播） */
+interface TxCtx {
+  conn: PoolConnection;
+  depth: number;
+}
+const txCtx = new AsyncLocalStorage<TxCtx>();
+
+/**
+ * 事务内返回当前连接；事务外返回一个池连接（执行完不释放，交由调用方/语句级）。
+ * 查询层统一：`const db = conn(); const [rows] = await db.execute(...)`。
+ */
+export function conn(): PoolConnection {
+  const ctx = txCtx.getStore();
+  if (ctx) return ctx.conn;
+  // 事务外：直接经连接池执行（无长连接语义）。这里返回 null 由调用方走 pool。
+  throw new Error('conn() only available inside withTransaction — use getPool() outside');
+}
+
+/** 关闭连接池（测试清理用） */
+export async function closeDb(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
   }
 }
 
-export function initDb(): DatabaseSync {
-  if (db) return db;
-  const path = resolve(process.cwd(), config.dbPath);
-  mkdirSync(dirname(path), { recursive: true });
-  db = new DatabaseSync(path);
-  db.exec('PRAGMA journal_mode = WAL;');
-  db.exec('PRAGMA foreign_keys = ON;');
-  const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
-  db.exec(schema);
-  logger.info('db', `initialized at ${path}`);
-  return db;
+export async function initDb(): Promise<Pool> {
+  if (pool) return pool;
+  pool = mysql.createPool({
+    host: config.mysql.host,
+    port: config.mysql.port,
+    user: config.mysql.user,
+    password: config.mysql.password,
+    database: config.mysql.database,
+    waitForConnections: true,
+    connectionLimit: 10,
+    charset: 'utf8mb4',
+  });
+  // 启动时验证连接
+  const conn = await pool.getConnection();
+  conn.release();
+  logger.info('db', `MySQL pool initialized at ${config.mysql.host}:${config.mysql.port}/${config.mysql.database}`);
+  return pool;
 }
 
 /**
- * 同步事务（node:sqlite 是同步 API，单进程内天然串行）。
- * BEGIN IMMEDIATE 在第一步写操作前就拿到写锁，杜绝两个写事务交叉，
- * 等价于文档 5.5 伪代码要求的行级原子性。
- *
- * 支持嵌套：内层 withTransaction 直接 join 外层事务（不重复 BEGIN），
- * 由最外层统一 COMMIT/ROLLBACK。这样 updateTaskStatus 之类内部自带
- * 事务的函数可以被安全地包在更大的事务里。
- *
- * 用法：withTransaction(() => { ... }) —— 返回 fn 的返回值。
+ * 事务封装（MySQL 异步版）。
+ * 嵌套复用：内层 withTransaction 检测到已有事务上下文 → 直接 join，深度+1；
+ * 最外层获取连接 → START TRANSACTION → fn → COMMIT / ROLLBACK → release。
+ * fn 必须是 async（事务内所有语句 await）。
  */
-let txDepth = 0;
-export function withTransaction<T>(fn: () => T): T {
-  const d = getDb();
-  const outer = txDepth === 0;
-  if (outer) d.exec('BEGIN IMMEDIATE');
-  txDepth++;
+export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+  const existing = txCtx.getStore();
+  if (existing) {
+    // 已在外层事务中：join（深度+1，最终由最外层统一提交）
+    existing.depth++;
+    try {
+      return await fn();
+    } finally {
+      existing.depth--;
+    }
+  }
+
+  const conn = await getPool().getConnection();
+  const ctx: TxCtx = { conn, depth: 0 };
   try {
-    const result = fn();
-    txDepth--;
-    if (outer) {
-      d.exec('COMMIT');
-      txDepth = 0;
-    }
-    return result;
-  } catch (err) {
-    txDepth--;
-    if (outer) {
+    await conn.beginTransaction();
+    return await txCtx.run(ctx, async () => {
+      ctx.depth++;
       try {
-        d.exec('ROLLBACK');
-      } catch {
-        /* 忽略回滚失败 */
+        const result = await fn();
+        await conn.commit();
+        return result;
+      } catch (err) {
+        try { await conn.rollback(); } catch { /* 忽略回滚失败 */ }
+        throw err;
+      } finally {
+        ctx.depth--;
       }
-      txDepth = 0;
-    }
-    throw err;
+    });
+  } finally {
+    conn.release();
   }
 }
 

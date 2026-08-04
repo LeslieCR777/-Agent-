@@ -1,10 +1,10 @@
 import { CronExpressionParser } from 'cron-parser';
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
-import { nowIso } from '../db/index.js';
+import { withTransaction } from '../db/index.js';
 import { listSchedules, updateScheduleLastRun } from '../db/queries/schedules.js';
 import { createTask } from '../db/queries/tasks.js';
-import { withTransaction } from '../db/index.js';
+import { CI_MONITOR_TEMPLATE, CI_TAG } from '../shared/constants.js';
 
 /**
  * cron 调度器（需求文档 FR-6）。
@@ -37,7 +37,7 @@ export async function runSchedulerTick(): Promise<void> {
   running = true;
   try {
     const now = new Date();
-    for (const schedule of listSchedules(true)) {
+    for (const schedule of await listSchedules(true)) {
       const lastRun = schedule.last_run_at ? new Date(schedule.last_run_at) : null;
       try {
         // 首次调度（lastRun 为 null）：基准取 now 前 1 秒，使"刚落地的整点"
@@ -47,7 +47,7 @@ export async function runSchedulerTick(): Promise<void> {
         if (next === null) continue;
         // 到点了（next 落在过去或刚好现在）且该 next 尚未触发过
         if (next.getTime() <= now.getTime() && (!lastRun || next.getTime() > lastRun.getTime())) {
-          fire(schedule.id, schedule.task_template, schedule.name, next);
+          await fire(schedule.id, schedule.task_template, schedule.name, next);
         }
       } catch (err) {
         logger.error('scheduler', `schedule ${schedule.id} error: ${err instanceof Error ? err.message : err}`);
@@ -69,22 +69,27 @@ function nextFireTime(cron: string, after: Date): Date | null {
   }
 }
 
-function fire(scheduleId: string, template: string, name: string, at: Date): void {
-  withTransaction(() => {
+async function fire(scheduleId: string, template: string, name: string, at: Date): Promise<void> {
+  await withTransaction(async () => {
     // 二次确认：last_run_at 未被其他 tick 推进（防止多实例/重入）
-    const s = listSchedules(true).find((x) => x.id === scheduleId);
+    const schedules = await listSchedules(true);
+    const s = schedules.find((x) => x.id === scheduleId);
     if (!s) return;
     const lastRun = s.last_run_at ? new Date(s.last_run_at) : null;
     if (lastRun && lastRun.getTime() >= at.getTime()) return;
 
     const prompt = renderTemplate(template, at);
-    const task = createTask({
+    // CI 每日监控：模板是 CI_MONITOR_TEMPLATE 标记，任务带 ['ci','daily_monitor'] tag，
+    // Worker 领到后调 POST /api/ci/daily-monitor 逐个竞品建 monitor 任务
+    const isCiDaily = template === CI_MONITOR_TEMPLATE;
+    const task = await createTask({
       title: `[定时] ${name}`,
       prompt,
       source: 'schedule',
       priority: 5,
+      tags: isCiDaily ? [CI_TAG, 'daily_monitor'] : undefined,
     });
-    updateScheduleLastRun(scheduleId, at.toISOString());
+    await updateScheduleLastRun(scheduleId, at.toISOString());
     logger.info('scheduler', `fired "${name}" at ${at.toISOString()} -> task ${task.id.slice(0, 8)}`);
   });
 }

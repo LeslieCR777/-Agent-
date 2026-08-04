@@ -2,7 +2,7 @@ import { config } from './config.js';
 
 /** 敏感值集合：密钥、Authorization 头。日志输出前一律 scrub。 */
 const secrets = new Set<string>();
-for (const v of [config.apiKey, config.embeddingApiKey]) {
+for (const v of [config.apiKey, config.embeddingApiKey, config.smtp.pass, config.serpApi.key, config.deepseek.apiKey, config.mysql.password]) {
   if (v) secrets.add(v);
 }
 

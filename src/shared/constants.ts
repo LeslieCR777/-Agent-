@@ -16,6 +16,37 @@ export const ENV = {
   EMBEDDING_MODEL: 'EMBEDDING_MODEL',
   EMBEDDING_BASE_URL: 'EMBEDDING_BASE_URL',
   LEAD_POLL_INTERVAL_MS: 'LEAD_POLL_INTERVAL_MS',
+  // ── CI 竞品情报 ──
+  OUR_PRODUCT_NAME: 'OUR_PRODUCT_NAME',
+  OUR_PRODUCT_WEBSITE: 'OUR_PRODUCT_WEBSITE',
+  OUR_PRODUCT_POSITIONING: 'OUR_PRODUCT_POSITIONING',
+  OUR_TARGET_MARKET: 'OUR_TARGET_MARKET',
+  CI_MONITOR_CRON: 'CI_MONITOR_CRON',
+  CI_QUALITY_THRESHOLD: 'CI_QUALITY_THRESHOLD',
+  CI_MAX_REFLEXION_ROUNDS: 'CI_MAX_REFLEXION_ROUNDS',
+  SMTP_HOST: 'SMTP_HOST',
+  SMTP_PORT: 'SMTP_PORT',
+  SMTP_SECURE: 'SMTP_SECURE',
+  SMTP_USER: 'SMTP_USER',
+  SMTP_PASS: 'SMTP_PASS',
+  SMTP_FROM: 'SMTP_FROM',
+  ALERT_EMAIL_TO: 'ALERT_EMAIL_TO',
+  SERPAPI_KEY: 'SERPAPI_KEY',
+  SERPAPI_BASE_URL: 'SERPAPI_BASE_URL',
+  SEARCH_ENGINE: 'SEARCH_ENGINE',
+  CI_DEMO_MODE: 'CI_DEMO_MODE',
+  // ── MySQL 存储 ──
+  MYSQL_HOST: 'MYSQL_HOST',
+  MYSQL_PORT: 'MYSQL_PORT',
+  MYSQL_USER: 'MYSQL_USER',
+  MYSQL_PASSWORD: 'MYSQL_PASSWORD',
+  MYSQL_DATABASE: 'MYSQL_DATABASE',
+  // ── 模型 ──
+  AGENT_MODEL: 'AGENT_MODEL',
+  DEEPSEEK_API_KEY: 'DEEPSEEK_API_KEY',
+  DEEPSEEK_BASE_URL: 'DEEPSEEK_BASE_URL',
+  DEEPSEEK_MODEL: 'DEEPSEEK_MODEL',
+  CI_JUDGE_COUNT: 'CI_JUDGE_COUNT',
 } as const;
 
 export const DEFAULT_PORT = 3013;
@@ -54,3 +85,26 @@ export const TERMINAL_STATUSES: TaskStatus[] = ['completed', 'failed', 'supersed
 export const MAX_ASSIGN_COUNT = 3;
 /** 领取任务的强制 Work 目录（隔离 agent 上下文，不污染 AgentWork） */
 export const AGENT_WORKDIR = '.agent-workspace';
+
+// ── CI 竞品情报常量 ──
+
+/** CI 任务统一 tag（tasks.tags[0] === 'ci' 即 CI 任务） */
+export const CI_TAG = 'ci';
+
+/** 每日竞品监控调度任务的任务模板标记（Worker 据此识别为 daily_monitor 任务） */
+export const CI_MONITOR_TEMPLATE = 'CI_DAILY_MONITOR';
+
+/** CI 流水线 stage 顺序（orchestrator 接力用） */
+export const CI_STAGE_ORDER: readonly string[] = ['monitor', 'research', 'compare', 'battlecard', 'quality'];
+
+/** Battlecard 质检默认门槛（1-10，低于则回 research 重搜） */
+export const CI_QUALITY_THRESHOLD = 7;
+
+/** Reflexion 质量循环最大轮次（round 从 0 起，最多回炉 MAX 次） */
+export const CI_MAX_REFLEXION_ROUNDS = 2;
+
+/** CI stage 任务优先级（比默认 5 高，优先被 Worker 领取） */
+export const CI_STAGE_PRIORITY = 4;
+
+/** CI 任务默认 schedule 名（server.ts 启动时自动创建） */
+export const CI_SCHEDULE_NAME = '每日竞品监控';

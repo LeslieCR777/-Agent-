@@ -1,7 +1,7 @@
 {
   "name": "agent-swarm",
   "version": "1.0.0",
-  "description": "Lead-Worker 多 Agent 任务编排系统",
+  "description": "竞品情报多 Agent 市场研究系统（Competitive Intelligence Multi-Agent）",
   "type": "module",
   "scripts": {
     "api": "tsx src/server.ts",
@@ -11,10 +11,13 @@
   },
   "dependencies": {
     "cron-parser": "^5.7.0",
+    "mysql2": "^3.23.2",
+    "nodemailer": "^9.0.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.5.12",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

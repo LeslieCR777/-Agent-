@@ -26,7 +26,7 @@ export const memoriesHandlers = {
       logger.warn('memories', `embedding failed, storing without vector: ${err instanceof Error ? err.message : err}`);
     }
 
-    const mem = createMemory({
+    const mem = await createMemory({
       content,
       embedding: vector,
       source_task_id: typeof body.source_task_id === 'string' ? body.source_task_id : null,
@@ -37,8 +37,8 @@ export const memoriesHandlers = {
   },
 
   /** GET /api/memories 全部记忆（剥离 embedding） */
-  list(_req: ApiRequest, res: ServerResponse): void {
-    const memories = listMemories().map(({ embedding: _emb, ...safe }) => safe);
+  async list(_req: ApiRequest, res: ServerResponse): Promise<void> {
+    const memories = (await listMemories()).map(({ embedding: _emb, ...safe }) => safe);
     sendJson(res, 200, { memories });
   },
 
@@ -52,7 +52,7 @@ export const memoriesHandlers = {
       hits = await searchMemories(q, topK);
     } catch (err) {
       logger.warn('memories', `search embedding failed, falling back to keyword: ${err instanceof Error ? err.message : err}`);
-      hits = keywordFallback(q, topK);
+      hits = await keywordFallback(q, topK);
     }
     sendJson(res, 200, { results: hits.map((h) => ({
       id: h.id,
@@ -64,26 +64,26 @@ export const memoriesHandlers = {
   },
 
   /** DELETE /api/memories/:id */
-  del(req: ApiRequest, res: ServerResponse): void {
-    const ok = deleteMemory(req.params!.id);
+  async del(req: ApiRequest, res: ServerResponse): Promise<void> {
+    const ok = await deleteMemory(req.params!.id);
     if (!ok) throw new HttpError(404, 'NOT_FOUND');
     sendJson(res, 200, { ok: true });
   },
 
   /** PATCH /api/memories/:id 点赞/点踩反馈 */
-  patch(req: ApiRequest, res: ServerResponse): void {
+  async patch(req: ApiRequest, res: ServerResponse): Promise<void> {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const delta = Number(body.delta ?? body.useful ?? 0);
     if (!Number.isFinite(delta)) throw new HttpError(400, 'delta must be a number');
-    const mem = scoreMemory(req.params!.id, delta);
+    const mem = await scoreMemory(req.params!.id, delta);
     if (!mem) throw new HttpError(404, 'NOT_FOUND');
     sendJson(res, 200, { memory: mem });
   },
 };
 
 /** 无语义向量时（离线降级）的关键字兜底检索：TF-IDF 词重叠 */
-function keywordFallback(q: string, topK: number): SearchHit[] {
-  const memories = listMemories();
+async function keywordFallback(q: string, topK: number): Promise<SearchHit[]> {
+  const memories = await listMemories();
   const qTerms = tokenize(q);
   if (qTerms.length === 0) return [];
   const scored = memories.map((m) => {

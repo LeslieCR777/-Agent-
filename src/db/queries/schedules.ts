@@ -1,7 +1,7 @@
-import { getDb, newId, nowIso } from '../index.js';
+import { newId, nowIso, getPool} from '../index.js';
 import type { ScheduledTask } from '../../shared/types.js';
 
-/** 定时任务读写（需求文档 4.5） */
+/** 定时任务读写（需求文档 4.5，MySQL 异步版） */
 
 export interface CreateScheduleInput {
   name: string;
@@ -10,7 +10,7 @@ export interface CreateScheduleInput {
   enabled?: boolean;
 }
 
-export function createSchedule(input: CreateScheduleInput): ScheduledTask {
+export async function createSchedule(input: CreateScheduleInput): Promise<ScheduledTask> {
   const row: ScheduledTask = {
     id: newId(),
     name: input.name,
@@ -20,40 +20,38 @@ export function createSchedule(input: CreateScheduleInput): ScheduledTask {
     last_run_at: null,
     created_at: nowIso(),
   };
-  getDb()
-    .prepare(
-      `INSERT INTO scheduled_tasks (id, name, cron, task_template, enabled, last_run_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(row.id, row.name, row.cron, row.task_template, row.enabled, row.last_run_at, row.created_at);
+  await getPool().execute(
+    `INSERT INTO scheduled_tasks (id, name, cron, task_template, enabled, last_run_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [row.id, row.name, row.cron, row.task_template, row.enabled, row.last_run_at, row.created_at]
+  );
   return row;
 }
 
-export function listSchedules(enabledOnly = false): ScheduledTask[] {
+export async function listSchedules(enabledOnly = false): Promise<ScheduledTask[]> {
   if (enabledOnly) {
-    return getDb()
-      .prepare(`SELECT * FROM scheduled_tasks WHERE enabled = 1 ORDER BY created_at ASC`)
-      .all() as unknown as ScheduledTask[];
+    const [rows] = await getPool().execute(`SELECT * FROM scheduled_tasks WHERE enabled = 1 ORDER BY created_at ASC`);
+    return rows;
   }
-  return getDb().prepare(`SELECT * FROM scheduled_tasks ORDER BY created_at ASC`).all() as unknown as ScheduledTask[];
+  const [rows] = await getPool().execute(`SELECT * FROM scheduled_tasks ORDER BY created_at ASC`);
+  return rows;
 }
 
-export function getSchedule(id: string): ScheduledTask | null {
-  const row = getDb().prepare(`SELECT * FROM scheduled_tasks WHERE id = ?`).get(id);
-  return (row as unknown as ScheduledTask | undefined) ?? null;
+export async function getSchedule(id: string): Promise<ScheduledTask | null> {
+  const [rows] = await getPool().execute(`SELECT * FROM scheduled_tasks WHERE id = ?`, [id]);
+  return rows[0] ?? null;
 }
 
-export function updateScheduleLastRun(id: string, runAt: string): void {
-  getDb().prepare(`UPDATE scheduled_tasks SET last_run_at = ? WHERE id = ?`).run(runAt, id);
+export async function updateScheduleLastRun(id: string, runAt: string): Promise<void> {
+  await getPool().execute(`UPDATE scheduled_tasks SET last_run_at = ? WHERE id = ?`, [runAt, id]);
 }
 
-export function deleteSchedule(id: string): boolean {
-  const res = getDb().prepare(`DELETE FROM scheduled_tasks WHERE id = ?`).run(id);
-  return res.changes === 1;
+export async function deleteSchedule(id: string): Promise<boolean> {
+  const [res] = await getPool().execute(`DELETE FROM scheduled_tasks WHERE id = ?`, [id]);
+  return (res as { affectedRows?: number }).affectedRows === 1;
 }
 
-export function toggleSchedule(id: string, enabled: boolean): ScheduledTask | null {
-  const d = getDb();
-  d.prepare(`UPDATE scheduled_tasks SET enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, id);
+export async function toggleSchedule(id: string, enabled: boolean): Promise<ScheduledTask | null> {
+  await getPool().execute(`UPDATE scheduled_tasks SET enabled = ? WHERE id = ?`, [enabled ? 1 : 0, id]);
   return getSchedule(id);
 }

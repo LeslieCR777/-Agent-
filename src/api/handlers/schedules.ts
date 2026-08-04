@@ -20,7 +20,7 @@ function assertValidCron(cron: string): void {
 
 export const schedulesHandlers = {
   /** POST /api/schedules 创建定时任务 */
-  create(req: ApiRequest, res: ServerResponse): void {
+  async create(req: ApiRequest, res: ServerResponse): Promise<void> {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : null;
     const cron = typeof body.cron === 'string' && body.cron.trim() ? body.cron.trim() : null;
@@ -29,34 +29,34 @@ export const schedulesHandlers = {
     if (!cron) throw new HttpError(400, 'cron is required');
     if (!template) throw new HttpError(400, 'task_template is required');
     assertValidCron(cron);
-    const schedule = createSchedule({ name, cron, task_template: template, enabled: body.enabled !== false });
+    const schedule = await createSchedule({ name, cron, task_template: template, enabled: body.enabled !== false });
     sendJson(res, 201, { schedule });
   },
 
   /** GET /api/schedules */
-  list(_req: ApiRequest, res: ServerResponse): void {
-    sendJson(res, 200, { schedules: listSchedules() });
+  async list(_req: ApiRequest, res: ServerResponse): Promise<void> {
+    sendJson(res, 200, { schedules: await listSchedules() });
   },
 
   /** GET /api/schedules/:id */
-  detail(req: ApiRequest, res: ServerResponse): void {
-    const schedule = getSchedule(req.params!.id);
+  async detail(req: ApiRequest, res: ServerResponse): Promise<void> {
+    const schedule = await getSchedule(req.params!.id);
     if (!schedule) throw new HttpError(404, 'NOT_FOUND');
     sendJson(res, 200, { schedule });
   },
 
   /** PATCH /api/schedules/:id 启用/停用 */
-  patch(req: ApiRequest, res: ServerResponse): void {
+  async patch(req: ApiRequest, res: ServerResponse): Promise<void> {
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'enabled is required');
-    const schedule = toggleSchedule(req.params!.id, body.enabled);
+    const schedule = await toggleSchedule(req.params!.id, body.enabled);
     if (!schedule) throw new HttpError(404, 'NOT_FOUND');
     sendJson(res, 200, { schedule });
   },
 
   /** DELETE /api/schedules/:id */
-  del(req: ApiRequest, res: ServerResponse): void {
-    const ok = deleteSchedule(req.params!.id);
+  async del(req: ApiRequest, res: ServerResponse): Promise<void> {
+    const ok = await deleteSchedule(req.params!.id);
     if (!ok) throw new HttpError(404, 'NOT_FOUND');
     sendJson(res, 200, { ok: true });
   },

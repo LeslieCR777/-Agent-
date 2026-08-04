@@ -1,7 +1,7 @@
-import { getDb, newId, nowIso } from '../index.js';
+import { newId, nowIso, getPool} from '../index.js';
 import type { Asset } from '../../shared/types.js';
 
-/** 文件资产库读写。文件本体存磁盘 assets/<id>，DB 存元数据。 */
+/** 文件资产库读写（MySQL 异步版）。文件本体存磁盘 assets/<id>，DB 存元数据。 */
 
 export interface CreateAssetInput {
   filename: string;       // 磁盘存储名
@@ -11,7 +11,7 @@ export interface CreateAssetInput {
   description?: string;
 }
 
-export function createAsset(input: CreateAssetInput): Asset {
+export async function createAsset(input: CreateAssetInput): Promise<Asset> {
   const row: Asset = {
     id: newId(),
     name: input.original_name,
@@ -22,32 +22,33 @@ export function createAsset(input: CreateAssetInput): Asset {
     description: input.description ?? null,
     created_at: nowIso(),
   };
-  getDb()
-    .prepare(
-      `INSERT INTO assets (id, name, filename, original_name, size, mime, description, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(row.id, row.name, row.filename, row.original_name, row.size, row.mime, row.description, row.created_at);
+  await getPool().execute(
+    `INSERT INTO assets (id, name, filename, original_name, size, mime, description, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [row.id, row.name, row.filename, row.original_name, row.size, row.mime, row.description, row.created_at]
+  );
   return row;
 }
 
-export function listAssets(): Asset[] {
-  return getDb().prepare(`SELECT * FROM assets ORDER BY created_at DESC`).all() as unknown as Asset[];
+export async function listAssets(): Promise<Asset[]> {
+  const [rows] = await getPool().execute(`SELECT * FROM assets ORDER BY created_at DESC`);
+  return rows;
 }
 
-export function getAsset(id: string): Asset | null {
-  const row = getDb().prepare(`SELECT * FROM assets WHERE id = ?`).get(id);
-  return (row as unknown as Asset | undefined) ?? null;
+export async function getAsset(id: string): Promise<Asset | null> {
+  const [rows] = await getPool().execute(`SELECT * FROM assets WHERE id = ?`, [id]);
+  return rows[0] ?? null;
 }
 
-export function deleteAsset(id: string): boolean {
-  const res = getDb().prepare(`DELETE FROM assets WHERE id = ?`).run(id);
-  return res.changes === 1;
+export async function deleteAsset(id: string): Promise<boolean> {
+  const [res] = await getPool().execute(`DELETE FROM assets WHERE id = ?`, [id]);
+  return (res as { affectedRows?: number }).affectedRows === 1;
 }
 
 /** 批量取资产（供 worker 准备任务目录用） */
-export function getAssets(ids: string[]): Asset[] {
+export async function getAssets(ids: string[]): Promise<Asset[]> {
   if (ids.length === 0) return [];
   const placeholders = ids.map(() => '?').join(',');
-  return getDb().prepare(`SELECT * FROM assets WHERE id IN (${placeholders})`).all(...ids) as unknown as Asset[];
+  const [rows] = await getPool().execute(`SELECT * FROM assets WHERE id IN (${placeholders})`, ids);
+  return rows;
 }

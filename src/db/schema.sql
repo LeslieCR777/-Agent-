@@ -98,3 +98,105 @@ CREATE TABLE IF NOT EXISTS assets (
   description   TEXT,
   created_at    TEXT NOT NULL
 );
+
+-- ===== 竞品情报（CI）模块 =====
+
+-- 竞品注册表：监控与分析的对象（用户决策：注册制管理）
+CREATE TABLE IF NOT EXISTS competitors (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  website         TEXT,
+  monitor_urls    TEXT,                    -- JSON 数组：要监控的页面 URL
+  notes           TEXT,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  status          TEXT NOT NULL DEFAULT 'idle',  -- idle | monitoring | error
+  created_at      TEXT NOT NULL,
+  last_checked_at TEXT,
+  last_error      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_competitors_enabled ON competitors(enabled);
+
+-- 三级检测的"前级哈希"：每次监控后记住每 URL 的 SHA-256，下次快筛
+CREATE TABLE IF NOT EXISTS competitor_pages (
+  id              TEXT PRIMARY KEY,
+  competitor_id   TEXT NOT NULL,
+  url             TEXT NOT NULL,
+  sha256          TEXT NOT NULL,
+  title           TEXT,
+  last_fetched_at TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  UNIQUE(competitor_id, url)
+);
+
+-- 竞品变化记录：monitor 阶段 LLM 分类结果（历史保留 + content_hash 去重）
+CREATE TABLE IF NOT EXISTS competitor_changes (
+  id            TEXT PRIMARY KEY,
+  competitor_id TEXT NOT NULL,
+  change_type   TEXT NOT NULL,             -- pricing|product|hiring|news|patent|blog|open_source
+  title         TEXT NOT NULL,
+  summary       TEXT,
+  url           TEXT,
+  severity      TEXT NOT NULL DEFAULT 'low', -- low|medium|high|critical
+  content_hash  TEXT,                       -- 去重键（页 hash，同页同变化不重复记）
+  raw_data      TEXT,                       -- 变化原文快照
+  task_id       TEXT,                       -- 来源 monitor 任务
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_changes_comp ON competitor_changes(competitor_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_changes_dedup ON competitor_changes(competitor_id, content_hash);
+
+-- 调研洞察：research 阶段产出（多轮历史，Reflexion 用 round 区分）
+CREATE TABLE IF NOT EXISTS research_insights (
+  id            TEXT PRIMARY KEY,
+  competitor_id TEXT NOT NULL,
+  topic         TEXT NOT NULL,
+  summary       TEXT,
+  key_findings  TEXT,                       -- JSON 数组
+  sources       TEXT,                       -- JSON 数组 {title,url}
+  confidence    REAL,
+  round         INTEGER NOT NULL DEFAULT 0, -- Reflexion 轮次
+  feedback      TEXT,                       -- 上轮质检反馈（回炉 prompt 用）
+  task_id       TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_insights_comp ON research_insights(competitor_id, created_at DESC);
+
+-- 对比矩阵：compare 阶段 8 维评分（每轮最新）
+CREATE TABLE IF NOT EXISTS comparison_matrices (
+  id            TEXT PRIMARY KEY,
+  competitor_id TEXT NOT NULL,
+  dimensions    TEXT,                       -- JSON 数组 DimensionScore（8 维）
+  overall_assessment TEXT,
+  round         INTEGER NOT NULL DEFAULT 0,
+  task_id       TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_matrices_comp ON comparison_matrices(competitor_id, created_at DESC);
+
+-- 销售战卡：battlecard 阶段产出（quality_score 由 quality 阶段回填）
+CREATE TABLE IF NOT EXISTS battlecards (
+  id            TEXT PRIMARY KEY,
+  competitor_id TEXT NOT NULL,
+  content       TEXT,                       -- JSON：strengths/weaknesses/differentiators/objections/elevator
+  quality_score REAL,
+  quality_detail TEXT,
+  round         INTEGER NOT NULL DEFAULT 0,
+  task_id       TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_battlecards_comp ON battlecards(competitor_id, created_at DESC);
+
+-- 告警记录：high/critical 变化推送（change_id 唯一保证每条只告警一次）
+CREATE TABLE IF NOT EXISTS alerts (
+  id            TEXT PRIMARY KEY,
+  competitor_id TEXT,
+  change_id     TEXT,
+  channel       TEXT NOT NULL DEFAULT 'email',
+  status        TEXT NOT NULL DEFAULT 'pending', -- pending|sent|failed|demo
+  recipient     TEXT,
+  payload       TEXT,                       -- 邮件正文快照
+  error         TEXT,
+  created_at    TEXT NOT NULL,
+  sent_at       TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_change ON alerts(change_id);

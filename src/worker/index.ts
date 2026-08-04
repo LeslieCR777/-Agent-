@@ -3,6 +3,7 @@ import { logger } from '../shared/logger.js';
 import { apiAsAgent, api, ApiClientError } from './client.js';
 import { runAgent, prepareTaskDir } from './runner.js';
 import { Heartbeater } from './heartbeat.js';
+import { isCiTask, executeCiStage } from '../ci/execute.js';
 
 /**
  * Worker 主循环（需求文档 FR-2/FR-3）：
@@ -17,6 +18,7 @@ interface TaskPayload {
     title: string;
     prompt: string;
     attachments: string | null;
+    tags: string | null;
   };
 }
 
@@ -80,29 +82,22 @@ async function main(): Promise<void> {
   }
 }
 
-/** 执行单个任务：上报 in_progress → 准备资产 → 跑 agent → 逐行上报日志 → 上报终态 */
-async function executeTask(agentId: string, task: { id: string; title: string; prompt: string; attachments: string | null }): Promise<void> {
-  logger.info('worker', `▶ executing task ${task.id.slice(0, 8)} "${task.title}"`);
+/** 日志上报节流器：500ms 批量一次 PATCH in_progress（CI 任务也复用） */
+export interface LogFlusher {
+  push(line: string): void;
+  flush(): Promise<void>;
+}
 
-  // 上报 in_progress（API 侧据此建 session）。这是后续 completed/failed
-  // 的合法前置状态，必须确认成功；失败重试，避免快任务把 completed 顶到
-  // 未 in_progress 的任务上被状态机拒绝。
-  await reportInProgress(agentId, task.id);
-
-  // 准备任务专属工作目录：建目录 + 下载引用的资产（attachment id 列表）
-  const workdir = await prepareTaskDir(task.id, task.attachments);
-
-  // 日志上报节流：500ms 批量一次
+function makeLogFlusher(agentId: string, taskId: string): LogFlusher {
   const logs: string[] = [];
   let flushing = false;
   let lastFlush = 0;
-
   const flushLogs = async () => {
     if (flushing || logs.length === 0) return;
     flushing = true;
     const batch = logs.splice(0);
     try {
-      await apiAsAgent(agentId, `/api/tasks/${task.id}/status`, {
+      await apiAsAgent(agentId, `/api/tasks/${taskId}/status`, {
         method: 'PATCH',
         body: { status: 'in_progress', log: batch.join('\n') },
       });
@@ -113,10 +108,8 @@ async function executeTask(agentId: string, task: { id: string; title: string; p
       flushing = false;
     }
   };
-
-  const runStart = Date.now();
-  const result = await runAgent(task.prompt, {
-    onLog: (line) => {
+  return {
+    push(line: string) {
       logs.push(line);
       const now = Date.now();
       if (now - lastFlush > 500) {
@@ -124,9 +117,37 @@ async function executeTask(agentId: string, task: { id: string; title: string; p
         void flushLogs();
       }
     },
+    flush: () => flushLogs(),
+  };
+}
+
+/** 执行单个任务：上报 in_progress → 准备资产 → 跑 agent → 逐行上报日志 → 上报终态 */
+async function executeTask(agentId: string, task: { id: string; title: string; prompt: string; attachments: string | null; tags: string | null }): Promise<void> {
+  logger.info('worker', `▶ executing task ${task.id.slice(0, 8)} "${task.title}"`);
+
+  // 上报 in_progress（API 侧据此建 session）。这是后续 completed/failed
+  // 的合法前置状态，必须确认成功；失败重试，避免快任务把 completed 顶到
+  // 未 in_progress 的任务上被状态机拒绝。
+  await reportInProgress(agentId, task.id);
+
+  // 准备任务专属工作目录：建目录 + 下载引用的资产（attachment id 列表）
+  const workdir = await prepareTaskDir(task.id, task.attachments);
+
+  // CI 任务：走专门的 stage 执行器（工具 → prompt → agent → 产物上报）
+  const tags = safeParseTags(task.tags);
+  if (isCiTask(tags)) {
+    await executeCiStage(agentId, task as Parameters<typeof executeCiStage>[1], workdir);
+    return;
+  }
+
+  const flusher = makeLogFlusher(agentId, task.id);
+
+  const runStart = Date.now();
+  const result = await runAgent(task.prompt, {
+    onLog: flusher.push,
   }, { cwd: workdir });
   const elapsed = Math.round((Date.now() - runStart) / 1000);
-  await flushLogs();
+  await flusher.flush();
 
   logger.info('worker', `finish task ${task.id.slice(0, 8)} exit=${result.exitCode} elapsed=${elapsed}s output_len=${result.output.length}`);
 
@@ -141,6 +162,16 @@ async function executeTask(agentId: string, task: { id: string; title: string; p
       method: 'PATCH',
       body: { status: 'failed', error: reason },
     }).catch(() => {});
+  }
+}
+
+function safeParseTags(tagsJson: string | null): string[] | null {
+  if (!tagsJson) return null;
+  try {
+    const parsed = JSON.parse(tagsJson);
+    return Array.isArray(parsed) ? parsed.map(String) : null;
+  } catch {
+    return null;
   }
 }
 

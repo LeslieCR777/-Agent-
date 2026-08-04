@@ -58,7 +58,7 @@ export const assetsHandlers = {
     const safeName = sanitizeFilename(filename);
     const description = typeof req.query?.get('description') === 'string' ? req.query.get('description')! : undefined;
     // 先落库拿到稳定 id，再用同一 id 作为磁盘目录名（保证下载路径一致）
-    const asset = createAsset({
+    const asset = await createAsset({
       filename: safeName,
       original_name: filename,
       size: data.length,
@@ -72,21 +72,21 @@ export const assetsHandlers = {
   },
 
   /** GET /api/assets 列表（不暴露 filename 内部字段细节） */
-  list(_req: ApiRequest, res: ServerResponse): void {
-    const assets = listAssets().map(({ filename: _f, ...rest }) => rest);
+  async list(_req: ApiRequest, res: ServerResponse): Promise<void> {
+    const assets = (await listAssets()).map(({ filename: _f, ...rest }) => rest);
     sendJson(res, 200, { assets });
   },
 
   /** GET /api/assets/:id/meta */
-  meta(req: ApiRequest, res: ServerResponse): void {
-    const asset = getAsset(req.params!.id);
+  async meta(req: ApiRequest, res: ServerResponse): Promise<void> {
+    const asset = await getAsset(req.params!.id);
     if (!asset) throw new HttpError(404, 'NOT_FOUND');
     sendJson(res, 200, { asset });
   },
 
   /** GET /api/assets/:id 下载文件本体 */
-  download(req: ApiRequest, res: ServerResponse): void {
-    const asset = getAsset(req.params!.id);
+  async download(req: ApiRequest, res: ServerResponse): Promise<void> {
+    const asset = await getAsset(req.params!.id);
     if (!asset) throw new HttpError(404, 'NOT_FOUND');
     const file = assetPath(asset.id, asset.filename);
     if (!existsSync(file)) throw new HttpError(404, 'FILE_MISSING');
@@ -100,8 +100,8 @@ export const assetsHandlers = {
   },
 
   /** DELETE /api/assets/:id */
-  del(req: ApiRequest, res: ServerResponse): void {
-    const asset = getAsset(req.params!.id);
+  async del(req: ApiRequest, res: ServerResponse): Promise<void> {
+    const asset = await getAsset(req.params!.id);
     if (!asset) throw new HttpError(404, 'NOT_FOUND');
     const dir = resolve(ASSET_DIR, asset.id);
     if (existsSync(dir)) {
@@ -109,7 +109,7 @@ export const assetsHandlers = {
       for (const f of readdirSync(dir)) unlinkSync(resolve(dir, f));
       rmdirSync(dir);
     }
-    deleteAsset(asset.id);
+    await deleteAsset(asset.id);
     sendJson(res, 200, { ok: true });
   },
 };

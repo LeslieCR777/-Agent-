@@ -17,6 +17,13 @@ import { startSweeper, stopSweeper } from './heartbeat/sweeper.js';
 import { startScheduler, stopScheduler } from './scheduler/index.js';
 import { initWs, broadcast, stopWs } from './ws/index.js';
 import { registerEventHook } from './db/queries/events.js';
+import { competitorsHandlers } from './api/handlers/competitors.js';
+import { ciHandlers } from './api/handlers/ci.js';
+import { onCiTaskCompleted, onCiTaskFailed } from './ci/orchestrator.js';
+import { createSchedule, listSchedules } from './db/queries/schedules.js';
+import { listCompetitors, createCompetitor } from './db/queries/competitors.js';
+import { CI_MONITOR_TEMPLATE, CI_SCHEDULE_NAME } from './shared/constants.js';
+import { getTask } from './db/queries/tasks.js';
 
 function buildRouter(): Router {
   const r = new Router();
@@ -63,6 +70,34 @@ function buildRouter(): Router {
   r.get('/api/assets/:id', (req, res) => { if (!requireApiKey(req, res)) return; assetsHandlers.download(req, res); });
   r.get('/api/assets/:id/meta', (req, res) => { if (!requireApiKey(req, res)) return; assetsHandlers.meta(req, res); });
   r.del('/api/assets/:id', (req, res) => { if (!requireApiKey(req, res)) return; assetsHandlers.del(req, res); });
+
+  // ── 竞品情报（CI）──
+  // 竞品 CRUD
+  r.post('/api/competitors', (req, res) => { if (!requireApiKey(req, res)) return; competitorsHandlers.create(req, res); });
+  r.get('/api/competitors', (req, res) => { if (!requireApiKey(req, res)) return; competitorsHandlers.list(req, res); });
+  r.get('/api/competitors/:id', (req, res) => { if (!requireApiKey(req, res)) return; competitorsHandlers.detail(req, res); });
+  r.patch('/api/competitors/:id', (req, res) => { if (!requireApiKey(req, res)) return; competitorsHandlers.patch(req, res); });
+  r.del('/api/competitors/:id', (req, res) => { if (!requireApiKey(req, res)) return; competitorsHandlers.del(req, res); });
+  // 流水线触发
+  r.post('/api/competitors/:id/analyze', (req, res) => { if (!requireApiKey(req, res)) return; competitorsHandlers.analyze(req, res); });
+  r.post('/api/competitors/:id/monitor', (req, res) => { if (!requireApiKey(req, res)) return; competitorsHandlers.monitor(req, res); });
+  // CI 查询 / 触发
+  r.post('/api/ci/daily-monitor', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.dailyMonitor(req, res); });
+  r.get('/api/ci/profile', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.profile(req, res); });
+  r.get('/api/ci/alerts', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.alertsList(req, res); });
+  r.post('/api/ci/alerts/send', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.alertsSend(req, res); });
+  r.get('/api/ci/competitors/:id/latest', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.latest(req, res); });
+  r.get('/api/ci/competitors/:id/changes', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.changesList(req, res); });
+  r.get('/api/ci/competitors/:id/insights', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.insightsList(req, res); });
+  r.get('/api/ci/competitors/:id/matrices', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.matricesList(req, res); });
+  r.get('/api/ci/competitors/:id/battlecards', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.battlecardsList(req, res); });
+  // CI 产物上报（Worker 侧，需要 X-Agent-ID）
+  r.post('/api/ci/pages/check', (req, res) => { if (!requireApiKey(req, res)) return; if (!resolveAgent(req, res, true)) return; ciHandlers.pagesCheck(req, res); });
+  r.post('/api/ci/changes', (req, res) => { if (!requireApiKey(req, res)) return; if (!resolveAgent(req, res, true)) return; ciHandlers.changes(req, res); });
+  r.post('/api/ci/insights', (req, res) => { if (!requireApiKey(req, res)) return; if (!resolveAgent(req, res, true)) return; ciHandlers.insights(req, res); });
+  r.post('/api/ci/matrices', (req, res) => { if (!requireApiKey(req, res)) return; if (!resolveAgent(req, res, true)) return; ciHandlers.matrices(req, res); });
+  r.post('/api/ci/battlecards', (req, res) => { if (!requireApiKey(req, res)) return; if (!resolveAgent(req, res, true)) return; ciHandlers.battlecards(req, res); });
+  r.post('/api/ci/quality', (req, res) => { if (!requireApiKey(req, res)) return; if (!resolveAgent(req, res, true)) return; ciHandlers.quality(req, res); });
 
   return r;
 }
@@ -131,12 +166,25 @@ export function createAppServer() {
 
 async function main() {
   initDb();
+
+  // CI 引导：自动建每日竞品监控 schedule；demo 模式且无竞品时 seed 示例竞品
+  await bootstrapCi();
+
   const server = createAppServer();
 
   // WS 事件推送：事件落库即广播（DB 与实时流单一事实来源）
   const wss = initWs(server);
   registerEventHook((event) => broadcast(JSON.stringify({ type: 'event', event })));
-  logger.info('server', 'ws event hook registered');
+
+  // CI 流水线接力：stage 任务完成/失败后 orchestrator 决定下一步
+  registerEventHook(async (event) => {
+    if (!event.task_id) return;
+    const task = await getTask(event.task_id);
+    if (!task) return;
+    if (event.type === 'task_completed') await onCiTaskCompleted(task);
+    else if (event.type === 'task_failed') await onCiTaskFailed(task);
+  });
+  logger.info('server', 'event hooks registered (ws + ci)');
 
   // 后台任务：心跳清扫 + 定时调度
   startSweeper();
@@ -157,6 +205,37 @@ async function main() {
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+/**
+ * CI 启动引导：
+ * 1. 自动创建「每日竞品监控」schedule（CI_MONITOR_CRON，模板 CI_DAILY_MONITOR）
+ * 2. demo 模式且无任何竞品时，seed 一条示例竞品，方便开箱演示
+ */
+async function bootstrapCi(): Promise<void> {
+  try {
+    const schedules = await listSchedules();
+    const hasDaily = schedules.some((s) => s.name === CI_SCHEDULE_NAME);
+    if (!hasDaily) {
+      await createSchedule({
+        name: CI_SCHEDULE_NAME,
+        cron: config.ciMonitorCron,
+        task_template: CI_MONITOR_TEMPLATE,
+      });
+      logger.info('server', `created CI schedule "${CI_SCHEDULE_NAME}" (cron: ${config.ciMonitorCron})`);
+    }
+    if (config.ciDemoMode && (await listCompetitors()).length === 0) {
+      const demo = await createCompetitor({
+        name: 'Demo 竞品 A',
+        website: 'https://example.com',
+        monitor_urls: ['https://example.com/pricing', 'https://example.com/careers'],
+        notes: 'demo 模式示例竞品（CI_DEMO_MODE=true 时自动创建）',
+      });
+      logger.info('server', `seeded demo competitor "${demo.name}"`);
+    }
+  } catch (err) {
+    logger.warn('server', `CI bootstrap skipped: ${err instanceof Error ? err.message : err}`);
+  }
 }
 
 // 直接被测试 import 时不启动；命令行运行时启动
