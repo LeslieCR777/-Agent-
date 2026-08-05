@@ -5,11 +5,12 @@ import { runAgent } from '../worker/runner.js';
 import { isDemo, demoAgentOutput } from './demo.js';
 import { parseCiTags } from './orchestrator.js';
 import { parseJsonArray, parseJsonBlock } from './parse.js';
-import { buildStagePrompt, type ExtractedPage } from './prompts.js';
+import { buildStagePrompt, buildQualityPrompt, type ExtractedPage } from './prompts.js';
 import { contentHash } from './tools/hash.js';
 import { fetchPage } from './tools/http.js';
 import { extractText, extractPricing, extractJobListings } from './tools/extract.js';
 import { webSearch } from './tools/search.js';
+import { judgeWithDeepSeek, aggregateVotes, demoJudgeVotes, JUDGE_ROLES } from './judge.js';
 import type {
   Battlecard,
   CiStage,
@@ -153,6 +154,40 @@ async function ciRunAgent(
   return result.output;
 }
 
+/**
+ * quality 阶段多 agent 测评：3 个评审视角（准确性/完整性/销售可用性）并行打分。
+ * - 优先 DeepSeek API（低成本、3 路并行不贵）
+ * - demo 模式 / 未配 DEEPSEEK_API_KEY → demo 桩投票
+ * - 聚合：score = 三均值取整，feedback = 三反馈拼接
+ */
+async function runQualityJudges(competitor: Competitor, battlecard: Battlecard): Promise<{ score: number; feedback: string }> {
+  if (isDemo() || !config.deepseek.apiKey) {
+    logger.info('ci', `demo/no-DeepSeek: quality uses ${JUDGE_ROLES.length} stub judges`);
+    const votes = demoJudgeVotes();
+    return aggregateVotes(votes);
+  }
+
+  // 每个 judge 用各自视角的 prompt（多 agent 差异性）
+  const results = await Promise.all(
+    JUDGE_ROLES.map(async (role) => {
+      try {
+        const focusPrompt = buildQualityPrompt(competitor, battlecard, role.key);
+        const out = await judgeWithDeepSeek(role.label, focusPrompt);
+        const parsed = parseJsonBlock<{ score?: number; feedback?: string }>(out);
+        if (!parsed || typeof parsed.score !== 'number') throw new Error('parse judge failed');
+        return { role: role.label, score: parsed.score, feedback: parsed.feedback ?? '' };
+      } catch (err) {
+        logger.warn('ci', `${role.key} judge failed: ${err instanceof Error ? err.message : err}`);
+        return null;
+      }
+    })
+  );
+  const votes = results.filter((v): v is NonNullable<typeof v> => v !== null);
+  // 全部失败则抛错（由调用方上报 failed）
+  if (votes.length === 0) throw new Error('all judges failed');
+  return aggregateVotes(votes);
+}
+
 /** 渲染并执行一个 stage 的完整流程（供 worker 调用） */
 
 /** 解析各 stage 的 agent 输出；失败抛错（→ 上报 failed → orchestrator 标记 error） */
@@ -271,6 +306,23 @@ export async function executeCiStage(agentId: string, task: Task, workdir = '.')
     searchResults: toolData.searchResults ?? [],
     pages: toolData.pages,
   });
+
+  // quality 阶段：多 agent 测评（3 评审并行），不走单 agent 调用
+  if (stage === 'quality') {
+    const battlecard = context.battlecard;
+    if (!battlecard) throw new Error('no battlecard to grade');
+    const agg = await runQualityJudges(context.competitor, battlecard);
+    // 直接上报聚合结果（不经过单 agent 的 postArtifact）
+    await apiAsAgent(agentId, `/api/ci/quality`, {
+      method: 'POST',
+      body: { competitor_id: info.competitorId, round: info.round, task_id: task.id, quality: agg },
+    });
+    await apiAsAgent(agentId, `/api/tasks/${task.id}/status`, {
+      method: 'PATCH',
+      body: { status: 'completed', result: `[CI quality] 3 评审聚合分 ${agg.score}/10` },
+    });
+    return;
+  }
 
   const output = await ciRunAgent(stage, prompt, () => {}, workdir);
   const parsed = parseStageOutput(stage, output, context.competitor);

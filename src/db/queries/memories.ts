@@ -1,4 +1,4 @@
-import { newId, nowIso, getPool} from '../index.js';
+import { newId, nowIso, query, exec } from '../index.js';
 import type { Memory } from '../../shared/types.js';
 
 /** 记忆读写（需求文档 4.4，MySQL 异步版）。embedding 存 LONGBLOB（Float64Array 序列化字节）。 */
@@ -18,7 +18,7 @@ export async function createMemory(input: CreateMemoryInput): Promise<Memory> {
     useful_score: 0,
     created_at: nowIso(),
   };
-  await getPool().execute(
+  await exec(
     `INSERT INTO memories (id, content, embedding, source_task_id, useful_score, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [row.id, row.content, row.embedding, row.source_task_id, row.useful_score, row.created_at]
@@ -27,7 +27,7 @@ export async function createMemory(input: CreateMemoryInput): Promise<Memory> {
 }
 
 export async function listMemories(limit = 200): Promise<Memory[]> {
-  const [rows] = await getPool().execute(
+  const rows = await query<Memory>(
     `SELECT * FROM memories ORDER BY created_at DESC LIMIT ?`,
     [limit]
   );
@@ -35,20 +35,20 @@ export async function listMemories(limit = 200): Promise<Memory[]> {
 }
 
 export async function deleteMemory(id: string): Promise<boolean> {
-  const [res] = await getPool().execute(`DELETE FROM memories WHERE id = ?`, [id]);
-  return (res as { affectedRows?: number }).affectedRows === 1;
+  const affected = await exec(`DELETE FROM memories WHERE id = ?`, [id]);
+  return affected === 1;
 }
 
 /** 点赞/点踩反馈（后续检索加权） */
 export async function scoreMemory(id: string, delta: number): Promise<Memory | null> {
-  await getPool().execute(`UPDATE memories SET useful_score = useful_score + ? WHERE id = ?`, [delta, id]);
-  const [rows] = await getPool().execute(`SELECT * FROM memories WHERE id = ?`, [id]);
+  await exec(`UPDATE memories SET useful_score = useful_score + ? WHERE id = ?`, [delta, id]);
+  const rows = await query<Memory>(`SELECT * FROM memories WHERE id = ?`, [id]);
   return rows[0] ?? null;
 }
 
 /** 读取全部带向量的记忆（内存余弦检索，数据量 < 10万条够用） */
 export async function allMemoriesWithVector(): Promise<{ id: string; content: string; source_task_id: string | null; useful_score: number; vector: Float64Array }[]> {
-  const [rows] = await getPool().execute(`SELECT * FROM memories WHERE embedding IS NOT NULL`);
+  const rows = await query<Memory>(`SELECT * FROM memories WHERE embedding IS NOT NULL`);
   return rows.map((r) => ({
     id: r.id,
     content: r.content,

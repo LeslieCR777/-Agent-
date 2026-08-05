@@ -113,6 +113,28 @@ export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * 查询辅助（查询层统一用它，避免 mysql2 execute 的 QueryResult 联合类型麻烦）。
+ * - 事务内：走 conn()（当前事务连接，保证一致性）
+ * - 事务外：走池连接
+ * 返回强类型 T[]；若 SQL 是写语句，T 应为 ResultSetHeader。
+ */
+export async function query<T = any>(sql: string, params: unknown[] = []): Promise<T[]> {
+  const ctx = txCtx.getStore();
+  // 用 query()（非预编译）而非 execute()：mysql2 的 execute 预编译不支持 LIMIT ? 绑定
+  const res = ctx ? await ctx.conn.query(sql, params as any[]) : await getPool().query(sql, params as any[]);
+  const rows = (res as unknown as [any[]])[0];
+  return rows as T[];
+}
+
+/** 写语句辅助：返回 affectedRows（事务感知） */
+export async function exec(sql: string, params: unknown[] = []): Promise<number> {
+  const ctx = txCtx.getStore();
+  const res = ctx ? await ctx.conn.query(sql, params as any[]) : await getPool().query(sql, params as any[]);
+  const first = (res as unknown as [{ affectedRows?: number }])[0];
+  return Number(first?.affectedRows ?? 0);
+}
+
 /** 生成 UUID（带随机后缀，杜绝极端场景下 UUID 复用） */
 export function newId(): string {
   return `${crypto.randomUUID()}`;

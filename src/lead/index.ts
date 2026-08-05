@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { api } from '../worker/client.js';
-import { spawnAgent } from '../worker/runner.js';
+import { spawnAgent, agentArgs } from '../worker/runner.js';
 import { AGENT_WORKDIR } from '../shared/constants.js';
 
 /**
@@ -187,7 +187,7 @@ function runAgent(prompt: string): Promise<string> {
   return new Promise((resolveP, reject) => {
     const workdir = resolve(process.cwd(), AGENT_WORKDIR);
     mkdirSync(workdir, { recursive: true });
-    const child = spawnAgent(['-p', '--output-format', 'text'], { cwd: workdir });
+    const child = spawnAgent(agentArgs(), { cwd: workdir });
     let out = '';
     let err = '';
     child.stdout?.on('data', (d: Buffer) => (out += d.toString()));

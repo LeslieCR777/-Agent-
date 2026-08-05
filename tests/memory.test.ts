@@ -34,9 +34,9 @@ test('语义相似文本向量更接近', async () => {
 
 test('记忆写入后可检索、可删除', async () => {
   const [vec] = await embedTexts(['爬虫反爬经验']);
-  const m = createMemory({ content: '爬虫要处理反爬机制', embedding: vec, source_task_id: 'task-x' });
-  const all = allMemoriesWithVector();
+  const m = await createMemory({ content: '爬虫要处理反爬机制', embedding: vec, source_task_id: 'task-x' });
+  const all = await allMemoriesWithVector();
   assert.ok(all.some((x) => x.id === m.id));
-  assert.ok(deleteMemory(m.id));
-  assert.equal(allMemoriesWithVector().some((x) => x.id === m.id), false);
+  assert.ok(await deleteMemory(m.id));
+  assert.equal((await allMemoriesWithVector()).some((x) => x.id === m.id), false);
 });

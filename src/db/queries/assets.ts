@@ -1,4 +1,4 @@
-import { newId, nowIso, getPool} from '../index.js';
+import { newId, nowIso, query, exec } from '../index.js';
 import type { Asset } from '../../shared/types.js';
 
 /** 文件资产库读写（MySQL 异步版）。文件本体存磁盘 assets/<id>，DB 存元数据。 */
@@ -22,7 +22,7 @@ export async function createAsset(input: CreateAssetInput): Promise<Asset> {
     description: input.description ?? null,
     created_at: nowIso(),
   };
-  await getPool().execute(
+  await exec(
     `INSERT INTO assets (id, name, filename, original_name, size, mime, description, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [row.id, row.name, row.filename, row.original_name, row.size, row.mime, row.description, row.created_at]
@@ -31,24 +31,24 @@ export async function createAsset(input: CreateAssetInput): Promise<Asset> {
 }
 
 export async function listAssets(): Promise<Asset[]> {
-  const [rows] = await getPool().execute(`SELECT * FROM assets ORDER BY created_at DESC`);
+  const rows = await query<Asset>(`SELECT * FROM assets ORDER BY created_at DESC`);
   return rows;
 }
 
 export async function getAsset(id: string): Promise<Asset | null> {
-  const [rows] = await getPool().execute(`SELECT * FROM assets WHERE id = ?`, [id]);
+  const rows = await query<Asset>(`SELECT * FROM assets WHERE id = ?`, [id]);
   return rows[0] ?? null;
 }
 
 export async function deleteAsset(id: string): Promise<boolean> {
-  const [res] = await getPool().execute(`DELETE FROM assets WHERE id = ?`, [id]);
-  return (res as { affectedRows?: number }).affectedRows === 1;
+  const affected = await exec(`DELETE FROM assets WHERE id = ?`, [id]);
+  return affected === 1;
 }
 
 /** 批量取资产（供 worker 准备任务目录用） */
 export async function getAssets(ids: string[]): Promise<Asset[]> {
   if (ids.length === 0) return [];
   const placeholders = ids.map(() => '?').join(',');
-  const [rows] = await getPool().execute(`SELECT * FROM assets WHERE id IN (${placeholders})`, ids);
+  const rows = await query<Asset>(`SELECT * FROM assets WHERE id IN (${placeholders})`, ids);
   return rows;
 }

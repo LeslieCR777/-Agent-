@@ -46,6 +46,13 @@ export function spawnAgent(args: string[], opts: { cwd: string }): ChildProcess 
       });
 }
 
+/** 组装 claude CLI 参数：-p 打印模式 + 可选 --model 指定更强模型（默认 claude-opus-5） */
+export function agentArgs(): string[] {
+  const args = ['-p', '--output-format', 'text'];
+  if (config.agentModel) args.splice(1, 0, '--model', config.agentModel);
+  return args;
+}
+
 export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}, opts: { cwd?: string } = {}): Promise<RunnerResult> {
   return new Promise((resolvePromise, reject) => {
     const workdir = opts.cwd ?? resolveWorkspace();
@@ -53,7 +60,7 @@ export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}, opts: 
 
     let child: ChildProcess;
     try {
-      child = spawnAgent(['-p', '--output-format', 'text'], { cwd: workdir });
+      child = spawnAgent(agentArgs(), { cwd: workdir });
     } catch (err) {
       reject(err as Error);
       return;

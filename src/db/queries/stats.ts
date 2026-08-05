@@ -1,4 +1,4 @@
-import { getPool } from '../index.js';
+import { query } from '../index.js';
 
 /** 仪表盘统计（需求文档 5.4 GET /api/stats，MySQL 异步版） */
 
@@ -17,19 +17,19 @@ export interface Stats {
 
 export async function getStats(): Promise<Stats> {
   const count = async (sql: string, params: unknown[] = []): Promise<number> => {
-    const [rows] = await getPool().execute(sql, params);
+    const rows = await query<{ n: number }>(sql, params);
     return Number(rows[0]?.n ?? 0);
   };
 
   const tasks_total = await count(`SELECT COUNT(*) AS n FROM tasks`);
 
-  const [statusRows] = await getPool().execute(
+  const statusRows = await query<{ status: string; n: number }>(
     `SELECT status, COUNT(*) AS n FROM tasks GROUP BY status`
   );
   const tasks_by_status: Record<string, number> = {};
   for (const r of statusRows) tasks_by_status[r.status] = Number(r.n);
 
-  const [agentRows] = await getPool().execute(
+  const agentRows = await query<{ status: string; n: number }>(
     `SELECT status, COUNT(*) AS n FROM agents GROUP BY status`
   );
   const agents = { total: agentRows.reduce((a, r) => a + Number(r.n), 0), idle: 0, busy: 0, offline: 0 };
@@ -47,7 +47,7 @@ export async function getStats(): Promise<Stats> {
     ci_alerts = await count(`SELECT COUNT(*) AS n FROM alerts`);
   } catch { /* 旧库无 CI 表 */ }
 
-  const [recent] = await getPool().execute(
+  const recent = await query<{ type: string; n: number }>(
     `SELECT type, COUNT(*) AS n FROM events GROUP BY type ORDER BY n DESC LIMIT 10`
   );
 

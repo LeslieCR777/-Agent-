@@ -1,4 +1,4 @@
-import { withTransaction, newId, nowIso, getPool, conn } from '../index.js';
+import { withTransaction, newId, nowIso, query, exec } from '../index.js';
 import type { Task, TaskStatus, TaskSource } from '../../shared/types.js';
 import { TRANSITIONS, TERMINAL_STATUSES } from '../../shared/constants.js';
 import { insertEvent } from './events.js';
@@ -82,7 +82,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       started_at: null,
       finished_at: null,
     };
-    await conn().execute(
+    await exec(
       `INSERT INTO tasks (${COLS}) VALUES (
         ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
@@ -97,7 +97,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
 }
 
 export async function getTask(id: string): Promise<Task | null> {
-  const [rows] = await getPool().execute(`SELECT ${COLS} FROM tasks WHERE id = ?`, [id]);
+  const rows = await query<Row>(`SELECT ${COLS} FROM tasks WHERE id = ?`, [id]);
   return rows[0] ? mapTask(rows[0]) : null;
 }
 
@@ -125,9 +125,9 @@ export async function listTasks(filter: TaskFilter): Promise<{ tasks: Task[]; to
   const size = Math.min(filter.size ?? 50, 200);
   const offset = (page - 1) * size;
 
-  const [countRows] = await getPool().execute(`SELECT COUNT(*) AS n FROM tasks ${where}`, params);
+  const countRows = await query<Row>(`SELECT COUNT(*) AS n FROM tasks ${where}`, params);
   const total = Number(countRows[0]?.n ?? 0);
-  const [rows] = await getPool().execute(
+  const rows = await query<Row>(
     `SELECT ${COLS} FROM tasks ${where} ORDER BY status = 'unassigned' DESC, priority ASC, created_at ASC LIMIT ? OFFSET ?`,
     [...params, size, offset]
   );
@@ -143,23 +143,23 @@ export async function listTasks(filter: TaskFilter): Promise<{ tasks: Task[]; to
 export async function claimNextTask(agentId: string): Promise<Task | null> {
   return withTransaction(async () => {
     // 1. 原子选行：FOR UPDATE SKIP LOCKED 跳过并发事务已锁的行（MySQL 8.0+）
-    const [cand] = await conn().execute(
+    const cand = await query<{ id: string }>(
       `SELECT id FROM tasks
        WHERE status = 'unassigned'
        ORDER BY priority ASC, created_at ASC, id ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED`
     );
-    const candidate = cand[0] as { id: string } | undefined;
+    const candidate = cand[0];
     if (!candidate) return null;
 
     // 2. 条件 UPDATE：影响行数=1 表示抢到
-    const [res] = await conn().execute(
+    const affected = await exec(
       `UPDATE tasks SET status = 'claimed', agent_id = ?, claimed_at = ?, assign_count = assign_count + 1
        WHERE id = ? AND status = 'unassigned'`,
       [agentId, nowIso(), candidate.id]
     );
-    if ((res as { affectedRows?: number }).affectedRows !== 1) return null; // 极端并发下被抢走
+    if (affected !== 1) return null; // 极端并发下被抢走
 
     const task = await getTask(candidate.id);
     if (!task) return null;
@@ -171,12 +171,12 @@ export async function claimNextTask(agentId: string): Promise<Task | null> {
 /** 手动认领指定任务（PATCH 前的辅助） */
 export async function claimTask(taskId: string, agentId: string): Promise<Task> {
   return withTransaction(async () => {
-    const [res] = await conn().execute(
+    const affected = await exec(
       `UPDATE tasks SET status = 'claimed', agent_id = ?, claimed_at = ?, assign_count = assign_count + 1
        WHERE id = ? AND status = 'unassigned'`,
       [agentId, nowIso(), taskId]
     );
-    if ((res as { affectedRows?: number }).affectedRows !== 1) throw new Error('TASK_NOT_CLAIMABLE');
+    if (affected !== 1) throw new Error('TASK_NOT_CLAIMABLE');
     const task = await getTask(taskId);
     if (!task) throw new Error('NOT_FOUND');
     await insertEvent({ task_id: taskId, agent_id: agentId, type: 'task_claimed', payload: { title: task.title } });
@@ -232,7 +232,7 @@ export async function updateTaskStatus(input: {
     if (input.status === 'failed') sets.push('result = NULL');
 
     params.push(input.taskId);
-    await conn().execute(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, params);
+    await exec(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, params);
 
     const updated = await getTask(input.taskId);
     if (!updated) throw new Error('NOT_FOUND');
@@ -267,12 +267,11 @@ function eventTypeFor(status: TaskStatus): 'task_started' | 'task_completed' | '
 /** 父任务有更新时：同名同类子任务作废（superseded）。用于 Lead 重复拆解。 */
 export async function supersedeChildrenOf(parentId: string): Promise<number> {
   return withTransaction(async () => {
-    const [res] = await conn().execute(
+    const n = await exec(
       `UPDATE tasks SET status = 'superseded', finished_at = ?
        WHERE parent_id = ? AND status IN ('unassigned','claimed','in_progress')`,
       [nowIso(), parentId]
     );
-    const n = Number((res as { affectedRows?: number }).affectedRows ?? 0);
     if (n > 0) await insertEvent({ task_id: parentId, type: 'task_superseded', payload: { count: n } });
     return n;
   });

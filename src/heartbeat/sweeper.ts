@@ -1,6 +1,6 @@
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
-import { withTransaction, nowIso, conn } from '../db/index.js';
+import { withTransaction, nowIso, query, exec } from '../db/index.js';
 import { findStaleAgents, setAgentOffline } from '../db/queries/agents.js';
 import { insertEvent } from '../db/queries/events.js';
 import type { Agent } from '../shared/types.js';
@@ -51,7 +51,7 @@ async function recoverAgent(agent: Agent, now: string): Promise<void> {
     await setAgentOffline(agent.id);
 
     // 2. 找回该 agent 名下未完成的任务
-    const [tasks] = await conn().execute(
+    const tasks = await query<{ id: string; assign_count: number; status: string }>(
       `SELECT id, assign_count, status FROM tasks
        WHERE agent_id = ? AND status IN ('claimed','in_progress')`,
       [agent.id]
@@ -73,14 +73,14 @@ async function recoverAgent(agent: Agent, now: string): Promise<void> {
 
       if (canRetry) {
         // stale → unassigned：放回待分配池，可被其他 Worker 领取
-        await conn().execute(
+        await exec(
           `UPDATE tasks SET status = 'unassigned', agent_id = NULL, claimed_at = NULL
            WHERE id = ? AND status IN ('claimed','in_progress')`,
           [task.id]
         );
       } else {
         // 认领超上限 → failed（bad 任务防死循环）
-        await conn().execute(
+        await exec(
           `UPDATE tasks SET status = 'failed', error = ?, agent_id = NULL, finished_at = ?
            WHERE id = ? AND status IN ('claimed','in_progress')`,
           ['assign limit exceeded (task repeatedly crashed workers)', now, task.id]

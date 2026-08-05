@@ -304,6 +304,7 @@
   <button class="tab-btn" data-tab="tasks" onclick="showTab('tasks')"><i data-lucide="list-checks"></i>任务中心</button>
   <button class="tab-btn" data-tab="assets" onclick="showTab('assets')"><i data-lucide="folder-open"></i>资产库</button>
   <button class="tab-btn" data-tab="system" onclick="showTab('system')"><i data-lucide="terminal"></i>系统</button>
+  <button class="tab-btn" data-tab="guide" onclick="showTab('guide')"><i data-lucide="book-open"></i>使用说明</button>
 </nav>
 
 <main>
@@ -434,6 +435,64 @@
       <div class="card">
         <h2><i data-lucide="user-cog"></i>我方产品画像</h2>
         <div id="profile"><div class="empty">加载中…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ 使用说明 ══════════ -->
+  <section class="panel" id="tab-guide">
+    <div class="grid">
+      <div class="card">
+        <h2><i data-lucide="rocket"></i>快速开始</h2>
+        <div class="bc-val" style="line-height:1.9">
+          ① <b>注册竞品</b>：在「总览」页填入竞品名称 + 官网 + 监控页面（逗号分隔），点「注册竞品」。<br>
+          ② <b>触发分析</b>：在竞品卡片点「分析」，系统自动跑完整流水线（约几分钟）。<br>
+          ③ <b>看结果</b>：「竞品情报」页查看对比矩阵、销售战卡、调研洞察、告警记录。<br>
+          ④ <b>定时监控</b>：默认每天 9 点自动监控所有 enabled 竞品（可在「系统」看 schedule）。
+        </div>
+      </div>
+      <div class="card">
+        <h2><i data-lucide="workflow"></i>流水线原理</h2>
+        <div class="bc-val" style="line-height:1.9">
+          <b>monitor</b> 抓取页面 → SHA-256 哈希快筛 → LLM 识别变化（定价/产品/招聘/新闻…）并打严重度。<br>
+          <b>research</b> 搜索财务/产品/市场/组织线索 → 生成洞察（带置信度 + 影响评估）。<br>
+          <b>compare</b> 8 维对比矩阵（我方 vs 竞品 0-10 分）。<br>
+          <b>battlecard</b> 销售战卡（优劣/差异化/异议处理/电梯陈述）。<br>
+          <b>quality</b> 3 个评审 agent 并行打分（准确性/完整性/销售可用性），聚合后低于阈值自动回 research 重搜。
+        </div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h2><i data-lucide="search-check"></i>监控页面怎么选</h2>
+        <div class="bc-val" style="line-height:1.9">
+          <b>monitor_urls 比 website 重要</b>——它是真正被哈希对比、检测变化的页面：<br>
+          · 定价页 <code>/pricing</code> → 检测价格调整<br>
+          · 招聘页 <code>/careers</code> → 检测扩招信号<br>
+          · 新品/发售页 → 检测产品动向<br>
+          单个 URL 抓取失败不中断流水线（逐 URL 容错）。
+        </div>
+      </div>
+      <div class="card">
+        <h2><i data-lucide="settings"></i>配置说明（.env）</h2>
+        <div class="bc-val" style="line-height:1.9;font-family:var(--mono);font-size:12px">
+          MYSQL_HOST/PORT/USER/PASSWORD/DATABASE —— 数据库<br>
+          OUR_PRODUCT_NAME/WEBSITE/POSITIONING/TARGET_MARKET —— 我方画像<br>
+          AGENT_MODEL —— 分析主模型（默认 claude-opus-5）<br>
+          DEEPSEEK_API_KEY —— 评审模型（3 评审 agent 用 DeepSeek）<br>
+          SMTP_HOST/PORT/USER/PASS + ALERT_EMAIL_TO —— 告警邮件<br>
+          SERPAPI_KEY —— 搜索（无则 demo 桩）<br>
+          CI_QUALITY_THRESHOLD —— 战卡质检门槛（默认 7）
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h2><i data-lucide="help-circle"></i>常见问题</h2>
+      <div class="bc-val" style="line-height:1.9">
+        <b>· 分析很慢？</b> 每个 stage 是一次 LLM 调用，可用多开 worker 加速并行。<br>
+        <b>· 收不到告警邮件？</b> 检查 SMTP 配置 + ALERT_EMAIL_TO，或看「竞品情报 → 告警记录」状态。<br>
+        <b>· 战卡一直回炉？</b> CI_QUALITY_THRESHOLD 调低，或检查 DEEPSEEK_API_KEY 是否配置。<br>
+        <b>· 竞品抓取失败？</b> 大站可能有反爬，把 monitor_urls 换成更开放的页面。
       </div>
     </div>
   </section>

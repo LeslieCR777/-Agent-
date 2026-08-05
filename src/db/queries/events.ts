@@ -1,4 +1,4 @@
-import { newId, nowIso, getPool} from '../index.js';
+import { newId, nowIso, query, exec } from '../index.js';
 import type { AppEvent, EventType } from '../../shared/types.js';
 
 /**
@@ -32,7 +32,7 @@ export async function insertEvent(input: InsertEventInput): Promise<AppEvent> {
     payload: input.payload === undefined ? null : JSON.stringify(input.payload),
     created_at: nowIso(),
   };
-  await getPool().execute(
+  await exec(
     `INSERT INTO events (id, task_id, agent_id, type, payload, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [row.id, row.task_id, row.agent_id, row.type, row.payload, row.created_at]
@@ -50,21 +50,18 @@ export async function insertEvent(input: InsertEventInput): Promise<AppEvent> {
 /** 增量拉取：since 之后的事件（看板断线重放用） */
 export async function listEventsSince(since: string | undefined, limit = 500): Promise<AppEvent[]> {
   if (!since) {
-    const [rows] = await getPool().execute(`SELECT * FROM events ORDER BY created_at DESC LIMIT ?`, [limit]);
-    return rows;
+    return query<AppEvent>(`SELECT * FROM events ORDER BY created_at DESC LIMIT ?`, [limit]);
   }
-  const [rows] = await getPool().execute(
+  return query<AppEvent>(
     `SELECT * FROM events WHERE created_at > ? ORDER BY created_at ASC LIMIT ?`,
     [since, limit]
   );
-  return rows;
 }
 
 /** 某任务的状态流转历史 */
 export async function taskEvents(taskId: string): Promise<AppEvent[]> {
-  const [rows] = await getPool().execute(
+  return query<AppEvent>(
     `SELECT * FROM events WHERE task_id = ? ORDER BY created_at ASC`,
     [taskId]
   );
-  return rows;
 }

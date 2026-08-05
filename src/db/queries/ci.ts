@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { withTransaction, newId, nowIso, getPool, conn} from '../index.js';
+import { withTransaction, newId, nowIso, query, exec } from '../index.js';
 import { insertEvent } from './events.js';
 import type {
   AlertRecord,
@@ -28,14 +28,14 @@ import type {
  */
 export async function upsertPageHash(input: { competitor_id: string; url: string; sha256: string; title?: string | null }): Promise<{ changed: boolean }> {
   return withTransaction(async () => {
-    const [existingRows] = await conn().execute(
+    const existingRows = await query<{ sha256: string }>(
       `SELECT sha256 FROM competitor_pages WHERE competitor_id = ? AND url = ?`,
       [input.competitor_id, input.url]
     );
     const existing = existingRows[0];
     const changed = !existing || existing.sha256 !== input.sha256;
     const now = nowIso();
-    await conn().execute(
+    await exec(
       `INSERT INTO competitor_pages (id, competitor_id, url, sha256, title, last_fetched_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE sha256 = VALUES(sha256), title = VALUES(title), last_fetched_at = VALUES(last_fetched_at)`,
@@ -46,7 +46,7 @@ export async function upsertPageHash(input: { competitor_id: string; url: string
 }
 
 export async function getPageHash(competitorId: string, url: string): Promise<string | null> {
-  const [rows] = await getPool().execute(
+  const rows = await query<{ sha256: string }>(
     `SELECT sha256 FROM competitor_pages WHERE competitor_id = ? AND url = ?`,
     [competitorId, url]
   );
@@ -68,14 +68,14 @@ export async function insertChanges(
     let inserted = 0;
     for (const c of changes) {
       const hash = c.raw_data ? sha256(JSON.stringify(c.raw_data)) : `${c.url}|${c.change_type}`;
-      const [res] = await conn().execute(
+      const affected = await exec(
         `INSERT IGNORE INTO competitor_changes
            (id, competitor_id, change_type, title, summary, url, severity, content_hash, raw_data, task_id, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [newId(), competitorId, c.change_type, c.title, c.summary, c.url,
           c.severity, hash, JSON.stringify(c.raw_data ?? null), taskId, nowIso()]
       );
-      if (Number((res as { affectedRows?: number }).affectedRows ?? 0) === 1) inserted++;
+      if (affected === 1) inserted++;
     }
     if (inserted > 0) {
       await insertEvent({
@@ -98,35 +98,32 @@ export async function listChanges(competitorId: string, opts: ListChangesOptions
   const params: (string | number)[] = [competitorId];
   if (opts.severity) { conds.push('severity = ?'); params.push(opts.severity); }
   const limit = Math.min(opts.limit ?? 50, 200);
-  const [rows] = await getPool().execute(
+  return query<CompetitorChangeRow>(
     `SELECT * FROM competitor_changes WHERE ${conds.join(' AND ')}
      ORDER BY created_at DESC LIMIT ?`,
     [...params, limit]
   );
-  return rows;
 }
 
 /** 该竞品所有 high/critical 变化（含已告警的——供 alert 去重） */
 export async function listHighCriticalChanges(competitorId: string, limit = 100): Promise<CompetitorChangeRow[]> {
-  const [rows] = await getPool().execute(
+  return query<CompetitorChangeRow>(
     `SELECT * FROM competitor_changes
      WHERE competitor_id = ? AND severity IN ('high','critical')
      ORDER BY created_at DESC LIMIT ?`,
     [competitorId, limit]
   );
-  return rows;
 }
 
 /** 尚未被告警覆盖的 high/critical 变化（alerts 已记录过 change_id 的排除） */
 export async function pendingHighCriticalChanges(competitorId: string): Promise<CompetitorChangeRow[]> {
-  const [rows] = await getPool().execute(
+  return query<CompetitorChangeRow>(
     `SELECT c.* FROM competitor_changes c
      LEFT JOIN alerts a ON a.change_id = c.id
      WHERE c.competitor_id = ? AND c.severity IN ('high','critical') AND a.id IS NULL
      ORDER BY c.created_at ASC`,
     [competitorId]
   );
-  return rows;
 }
 
 // ── 调研洞察 ───────────────────────────────────────────
@@ -151,7 +148,7 @@ export async function insertInsight(
     task_id: taskId,
     created_at: nowIso(),
   };
-  await getPool().execute(
+  await exec(
     `INSERT INTO research_insights
        (id, competitor_id, topic, summary, key_findings, sources, confidence, round, feedback, task_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -171,12 +168,11 @@ export async function latestInsights(competitorId: string, round?: number): Prom
   const conds = ['competitor_id = ?'];
   const params: (string | number)[] = [competitorId];
   if (round !== undefined) { conds.push('round = ?'); params.push(round); }
-  const [rows] = await getPool().execute(
+  return query<ResearchInsightRow>(
     `SELECT * FROM research_insights WHERE ${conds.join(' AND ')}
      ORDER BY created_at DESC LIMIT 20`,
     params
   );
-  return rows;
 }
 
 // ── 对比矩阵 ───────────────────────────────────────────
@@ -196,7 +192,7 @@ export async function insertMatrix(
     task_id: taskId,
     created_at: nowIso(),
   };
-  await getPool().execute(
+  await exec(
     `INSERT INTO comparison_matrices (id, competitor_id, dimensions, overall_assessment, round, task_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [row.id, row.competitor_id, JSON.stringify(row.dimensions), row.overall_assessment, row.round, row.task_id, row.created_at]
@@ -213,7 +209,7 @@ export async function latestMatrix(competitorId: string, round?: number): Promis
   const conds = ['competitor_id = ?'];
   const params: (string | number)[] = [competitorId];
   if (round !== undefined) { conds.push('round = ?'); params.push(round); }
-  const [rows] = await getPool().execute(
+  const rows = await query<Record<string, unknown>>(
     `SELECT * FROM comparison_matrices WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT 1`,
     params
   );
@@ -248,7 +244,7 @@ export async function insertBattlecard(
     task_id: taskId,
     created_at: nowIso(),
   };
-  await getPool().execute(
+  await exec(
     `INSERT INTO battlecards (id, competitor_id, content, quality_score, quality_detail, round, task_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [row.id, row.competitor_id, JSON.stringify(row.content), null, null, row.round, row.task_id, row.created_at]
@@ -262,7 +258,7 @@ export async function insertBattlecard(
 }
 
 export async function latestBattlecard(competitorId: string): Promise<BattlecardRow | null> {
-  const [rows] = await getPool().execute(
+  const rows = await query<Record<string, unknown>>(
     `SELECT * FROM battlecards WHERE competitor_id = ? ORDER BY created_at DESC LIMIT 1`,
     [competitorId]
   );
@@ -286,7 +282,7 @@ function mapBattlecardRow(r: Record<string, unknown>): BattlecardRow {
 }
 
 export async function listBattlecards(competitorId: string, limit = 10): Promise<BattlecardRow[]> {
-  const [rows] = await getPool().execute(
+  const rows = await query<Record<string, unknown>>(
     `SELECT * FROM battlecards WHERE competitor_id = ? ORDER BY created_at DESC LIMIT ?`,
     [competitorId, limit]
   );
@@ -295,7 +291,7 @@ export async function listBattlecards(competitorId: string, limit = 10): Promise
 
 /** quality 阶段回填战卡质检结果 */
 export async function setBattlecardQuality(battlecardId: string, q: QualityResult): Promise<void> {
-  await getPool().execute(
+  await exec(
     `UPDATE battlecards SET quality_score = ?, quality_detail = ? WHERE id = ?`,
     [q.score, q.feedback, battlecardId]
   );
@@ -324,7 +320,7 @@ export async function insertAlert(input: InsertAlertInput): Promise<AlertRecord>
     created_at: nowIso(),
     sent_at: null,
   };
-  await getPool().execute(
+  await exec(
     `INSERT INTO alerts (id, competitor_id, change_id, channel, status, recipient, payload, error, created_at, sent_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [row.id, row.competitor_id, row.change_id, row.channel, row.status,
@@ -339,7 +335,7 @@ export async function updateAlertStatus(id: string, status: string, error?: stri
   if (status === 'sent') { sets.push('sent_at = ?'); params.push(nowIso()); }
   if (error !== undefined) { sets.push('error = ?'); params.push(error); }
   params.push(id);
-  await getPool().execute(`UPDATE alerts SET ${sets.join(', ')} WHERE id = ?`, params);
+  await exec(`UPDATE alerts SET ${sets.join(', ')} WHERE id = ?`, params);
 }
 
 export async function listAlerts(filter: { status?: string; limit?: number } = {}): Promise<AlertRecord[]> {
@@ -348,11 +344,10 @@ export async function listAlerts(filter: { status?: string; limit?: number } = {
   if (filter.status) { conds.push('status = ?'); params.push(filter.status); }
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   const limit = Math.min(filter.limit ?? 50, 200);
-  const [rows] = await getPool().execute(
+  return query<AlertRecord>(
     `SELECT * FROM alerts ${where} ORDER BY created_at DESC LIMIT ?`,
     [...params, limit]
   );
-  return rows;
 }
 
 // ── 工具 ───────────────────────────────────────────────

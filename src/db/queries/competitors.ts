@@ -1,4 +1,4 @@
-import { newId, nowIso, getPool} from '../index.js';
+import { newId, nowIso, query, exec } from '../index.js';
 import type { Competitor } from '../../shared/types.js';
 
 /** 竞品注册表读写（CI 模块，MySQL 异步版）。 */
@@ -27,7 +27,7 @@ export async function createCompetitor(input: CreateCompetitorInput): Promise<Co
     last_checked_at: null,
     last_error: null,
   };
-  await getPool().execute(
+  await exec(
     `INSERT INTO competitors (${COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [row.id, row.name, row.website, row.monitor_urls, row.notes, row.enabled,
       row.status, row.created_at, row.last_checked_at, row.last_error]
@@ -36,7 +36,7 @@ export async function createCompetitor(input: CreateCompetitorInput): Promise<Co
 }
 
 export async function getCompetitor(id: string): Promise<Competitor | null> {
-  const [rows] = await getPool().execute(`SELECT ${COLS} FROM competitors WHERE id = ?`, [id]);
+  const rows = await query<Competitor>(`SELECT ${COLS} FROM competitors WHERE id = ?`, [id]);
   return rows[0] ?? null;
 }
 
@@ -46,11 +46,9 @@ export interface CompetitorListOptions {
 
 export async function listCompetitors(opts: CompetitorListOptions = {}): Promise<Competitor[]> {
   if (opts.enabled === true) {
-    const [rows] = await getPool().execute(`SELECT ${COLS} FROM competitors WHERE enabled = 1 ORDER BY created_at ASC`);
-    return rows;
+    return query<Competitor>(`SELECT ${COLS} FROM competitors WHERE enabled = 1 ORDER BY created_at ASC`);
   }
-  const [rows] = await getPool().execute(`SELECT ${COLS} FROM competitors ORDER BY created_at ASC`);
-  return rows;
+  return query<Competitor>(`SELECT ${COLS} FROM competitors ORDER BY created_at ASC`);
 }
 
 export async function listEnabledCompetitors(): Promise<Competitor[]> {
@@ -78,13 +76,13 @@ export async function updateCompetitor(id: string, patch: CompetitorPatch): Prom
   if (patch.enabled !== undefined) { sets.push('enabled = ?'); params.push(patch.enabled ? 1 : 0); }
   if (sets.length === 0) return getCompetitor(id);
   params.push(id);
-  await getPool().execute(`UPDATE competitors SET ${sets.join(', ')} WHERE id = ?`, params);
+  await exec(`UPDATE competitors SET ${sets.join(', ')} WHERE id = ?`, params);
   return getCompetitor(id);
 }
 
 export async function deleteCompetitor(id: string): Promise<boolean> {
-  const [res] = await getPool().execute(`DELETE FROM competitors WHERE id = ?`, [id]);
-  return (res as { affectedRows?: number }).affectedRows === 1;
+  const affected = await exec(`DELETE FROM competitors WHERE id = ?`, [id]);
+  return affected === 1;
 }
 
 /** 更新竞品监控状态/时间（orchestrator / pages/check 调用） */
@@ -99,5 +97,5 @@ export async function touchCompetitor(
   if (patch.last_error !== undefined) { sets.push('last_error = ?'); params.push(patch.last_error); }
   if (sets.length === 0) return;
   params.push(id);
-  await getPool().execute(`UPDATE competitors SET ${sets.join(', ')} WHERE id = ?`, params);
+  await exec(`UPDATE competitors SET ${sets.join(', ')} WHERE id = ?`, params);
 }
