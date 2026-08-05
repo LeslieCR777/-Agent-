@@ -986,13 +986,40 @@ async function loadCiInsights() {
 async function loadProfile() {
   try {
     const { profile } = await api('/api/ci/profile');
+    const src = profile.source === 'db' ? '（已保存到数据库）' : '（来自 .env 默认，保存后入库）';
     $('profile').innerHTML = `
-      <div class="bc-field"><div class="bc-label"><i data-lucide="building-2" style="width:13px;height:13px"></i>产品名称</div><div class="bc-val">${esc(profile.name)}</div></div>
-      <div class="bc-field"><div class="bc-label">定位</div><div class="bc-val">${esc(profile.positioning) || '（未配置 OUR_PRODUCT_POSITIONING）'}</div></div>
-      <div class="bc-field"><div class="bc-label">目标市场</div><div class="bc-val">${esc(profile.targetMarket) || '（未配置 OUR_TARGET_MARKET）'}</div></div>
-      ${profile.website ? `<div class="bc-field"><div class="bc-label">官网</div><div class="bc-val">${esc(profile.website)}</div></div>` : ''}
+      <form id="profile-form" style="display:flex;flex-direction:column;gap:10px">
+        <label class="field">产品名称<input id="pf-name" value="${esc(profile.name)}" required></label>
+        <label class="field">官网<input id="pf-website" value="${esc(profile.website || '')}" placeholder="https://…（可选）"></label>
+        <label class="field">定位<textarea id="pf-positioning" placeholder="一句话描述产品定位">${esc(profile.positioning || '')}</textarea></label>
+        <label class="field">目标市场<textarea id="pf-market" placeholder="目标客群、价格带等">${esc(profile.targetMarket || '')}</textarea></label>
+        <div class="row">
+          <button type="submit" class="btn"><i data-lucide="save"></i><span class="lbl">保存我方画像</span></button>
+          <small style="color:var(--faint)">${src}</small>
+        </div>
+      </form>
     `;
     lucideRefresh();
+    // 绑定保存
+    $('profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button');
+      btnLoading(btn, true);
+      try {
+        const r = await api('/api/ci/profile', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: $('pf-name').value.trim(),
+            website: $('pf-website').value.trim() || undefined,
+            positioning: $('pf-positioning').value.trim() || undefined,
+            targetMarket: $('pf-market').value.trim() || undefined,
+          }),
+        });
+        toast(`我方画像已保存: ${r.profile.name}`);
+        await loadProfile();
+      } catch (err) { toast(`保存失败: ${err.message}`); }
+      finally { btnLoading(btn, false); }
+    });
   } catch {}
 }
 

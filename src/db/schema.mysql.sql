@@ -190,3 +190,13 @@ CREATE TABLE IF NOT EXISTS alerts (
   sent_at       VARCHAR(40),
   UNIQUE KEY idx_alerts_change (change_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 我方产品画像（用户自行注册，看板可编辑；空表时回退 .env 的 OUR_PRODUCT_*）
+CREATE TABLE IF NOT EXISTS our_profile (
+  id            VARCHAR(36) PRIMARY KEY,
+  name          VARCHAR(200) NOT NULL,
+  website       VARCHAR(2048),
+  positioning   TEXT,
+  target_market TEXT,
+  updated_at    VARCHAR(40) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

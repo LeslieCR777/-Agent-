@@ -52,18 +52,24 @@ interface CiContext {
 
 /** 拉取该 stage 需要的上下文（HTTP GET，服务端产品接口是普通查询不需要 agent） */
 async function fetchContext(competitorId: string): Promise<CiContext> {
-  const [comp, changes, insights, matrix, battlecard] = await Promise.all([
+  const [comp, changes, insights, matrix, battlecard, profile] = await Promise.all([
     api<{ competitor: Competitor }>(`/api/competitors/${competitorId}`).catch(() => null),
     api<{ changes: CompetitorChangeRow[] }>(`/api/ci/competitors/${competitorId}/changes?limit=20`).catch(() => ({ changes: [] })),
     api<{ insights: ResearchInsightRow[] }>(`/api/ci/competitors/${competitorId}/insights`).catch(() => ({ insights: [] })),
     api<{ matrix: ComparisonMatrix | null }>(`/api/ci/competitors/${competitorId}/matrices`).catch(() => ({ matrix: null })),
     api<{ battlecards: Battlecard[] }>(`/api/ci/competitors/${competitorId}/battlecards?limit=1`).catch(() => ({ battlecards: [] })),
+    // 我方画像：优先取用户在看板注册的（DB），失败回退 .env 默认
+    api<{ profile: typeof config.ourProduct }>(`/api/ci/profile`).catch(() => null),
   ]);
 
   if (!comp?.competitor) throw new Error('competitor not found');
+  const dbProfile = profile?.profile;
+  const ourProfile = dbProfile?.name
+    ? { name: dbProfile.name, website: dbProfile.website ?? '', positioning: dbProfile.positioning ?? '', targetMarket: dbProfile.targetMarket ?? '' }
+    : config.ourProduct;
   return {
     competitor: comp.competitor,
-    ourProfile: config.ourProduct,
+    ourProfile,
     latestChanges: changes.changes,
     latestInsights: insights.insights,
     matrix: matrix?.matrix ?? null,

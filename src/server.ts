@@ -83,7 +83,8 @@ function buildRouter(): Router {
   r.post('/api/competitors/:id/monitor', (req, res) => { if (!requireApiKey(req, res)) return; competitorsHandlers.monitor(req, res); });
   // CI 查询 / 触发
   r.post('/api/ci/daily-monitor', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.dailyMonitor(req, res); });
-  r.get('/api/ci/profile', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.profile(req, res); });
+  r.get('/api/ci/profile', (req, res) => { if (!requireApiKey(req, res)) return; void ciHandlers.profile(req, res); });
+  r.patch('/api/ci/profile', (req, res) => { if (!requireApiKey(req, res)) return; void ciHandlers.profileSave(req, res); });
   r.get('/api/ci/alerts', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.alertsList(req, res); });
   r.post('/api/ci/alerts/send', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.alertsSend(req, res); });
   r.get('/api/ci/competitors/:id/latest', (req, res) => { if (!requireApiKey(req, res)) return; ciHandlers.latest(req, res); });

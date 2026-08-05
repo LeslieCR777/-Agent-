@@ -20,6 +20,7 @@ import {
 } from '../../db/queries/ci.js';
 import { maybeSendAlerts } from '../../ci/alert.js';
 import { kickoffPipeline } from '../../ci/orchestrator.js';
+import { getProfile, saveProfile } from '../../db/queries/profile.js';
 import { config } from '../../shared/config.js';
 import type {
   Battlecard,
@@ -167,9 +168,45 @@ export const ciHandlers = {
     sendJson(res, 200, { kicked });
   },
 
-  /** GET /api/ci/profile 我方产品档案（看板展示） */
-  profile(_req: ApiRequest, res: ServerResponse): void {
-    sendJson(res, 200, { profile: config.ourProduct });
+  /** GET /api/ci/profile 我方产品档案（看板展示；DB 优先，空表回退 .env） */
+  async profile(_req: ApiRequest, res: ServerResponse): Promise<void> {
+    const dbProfile = await getProfile();
+    if (dbProfile) {
+      sendJson(res, 200, {
+        profile: {
+          name: dbProfile.name,
+          website: dbProfile.website ?? '',
+          positioning: dbProfile.positioning ?? '',
+          targetMarket: dbProfile.target_market ?? '',
+          source: 'db',
+        },
+      });
+      return;
+    }
+    // 空表：回退 .env 默认（config.ourProduct）
+    sendJson(res, 200, { profile: { ...config.ourProduct, source: 'env' } });
+  },
+
+  /** PUT /api/ci/profile 用户自行注册/更新我方产品画像 */
+  async profileSave(req: ApiRequest, res: ServerResponse): Promise<void> {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : null;
+    if (!name) throw new HttpError(400, 'name is required');
+    const saved = await saveProfile({
+      name,
+      website: typeof body.website === 'string' ? body.website.trim() : undefined,
+      positioning: typeof body.positioning === 'string' ? body.positioning.trim() : undefined,
+      target_market: typeof body.targetMarket === 'string' ? body.targetMarket.trim() : undefined,
+    });
+    sendJson(res, 200, {
+      profile: {
+        name: saved.name,
+        website: saved.website ?? '',
+        positioning: saved.positioning ?? '',
+        targetMarket: saved.target_market ?? '',
+        source: 'db',
+      },
+    });
   },
 
   /** GET /api/ci/competitors/:id/latest 看板聚合：竞品 + 最新矩阵/战卡 + 近期变化/洞察 */
