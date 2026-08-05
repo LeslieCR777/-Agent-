@@ -93,6 +93,11 @@ test('parseEvalJudgement：宽容解析判官 JSON', () => {
   assert.equal(parseEvalJudgement('{"评分":0.6,"feedback":"中"}').score, 6); // 0-1 → ×10
   assert.equal(parseEvalJudgement('不是JSON').score, null);
   assert.equal(parseEvalJudgement('{"score":8}').passed, null);
+  // 真实判官场景：feedback 含转义引号/中文引号（JSON.stringify 产物）
+  const escaped = JSON.stringify({ score: 8, passed: true, feedback: '建议补充 topic: "组织与人才" 主题' });
+  assert.equal(parseEvalJudgement(escaped).score, 8);
+  // 多行 + 前缀文字
+  assert.equal(parseEvalJudgement('评审结果：\n{"score":7,"passed":true,"feedback":"ok"}').score, 7);
 });
 
 test('pipeline case 自动路由到 httpPipelineExecutor（不再 unknown stage）', async () => {

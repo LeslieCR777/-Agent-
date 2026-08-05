@@ -197,7 +197,18 @@ interface ScorerOpts {
 
 /** 从判官 JSON 中宽容提取分数（复用 execute.ts extractScore 的思路） */
 export function parseEvalJudgement(raw: string): { score: number | null; passed: boolean | null; feedback: string } {
-  const parsed = parseJsonBlock<Record<string, unknown>>(raw);
+  // 先试原生 JSON.parse（raw 本身是完整有效 JSON 时最可靠，兼容 feedback 含转义引号/换行）
+  let parsed = (() => {
+    try {
+      const t = raw.trim().replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '').trim();
+      const obj = JSON.parse(t) as Record<string, unknown>;
+      return typeof obj === 'object' && obj !== null && !Array.isArray(obj) ? obj : null;
+    } catch {
+      return null;
+    }
+  })();
+  // 原生失败再走宽容扫描器
+  if (!parsed) parsed = parseJsonBlock<Record<string, unknown>>(raw);
   if (!parsed) return { score: null, passed: null, feedback: '' };
   let score: number | null = null;
   for (const cand of [parsed.score, parsed.rating, parsed['评分']]) {
