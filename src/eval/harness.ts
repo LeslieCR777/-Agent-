@@ -286,9 +286,16 @@ export interface RunEvalOptions {
 
 export async function runEvalRun(name: string, opts: RunEvalOptions = {}): Promise<{ run: EvalRun; report: string }> {
   const log = opts.onProgress ?? (() => {});
-  const executor = opts.executor ?? inProcessStageExecutor();
   const scorer = opts.scorer ?? deepseekScorer();
   const concurrency = opts.concurrency ?? 2;
+
+  // 按 case.stage 自动选执行器：pipeline 用黑盒 HTTP，其他用进程内。
+  // 用户可传单一 executor 覆盖（如只想测单 stage 或只想测全链）。
+  const customExecutor = opts.executor;
+  const executorFor = (stage: EvalStage): EvalExecutor => {
+    if (customExecutor) return customExecutor;
+    return stage === 'pipeline' ? httpPipelineExecutor() : inProcessStageExecutor();
+  };
 
   // 1. 创建 run
   const run = await createEvalRun(name);
@@ -297,12 +304,12 @@ export async function runEvalRun(name: string, opts: RunEvalOptions = {}): Promi
   const selected = opts.limit ? cases.slice(0, opts.limit) : cases;
   log(`[eval] ${selected.length} cases selected (${run.id.slice(0, 8)})`);
 
-  // 2. 并发跑每个 case
+  // 2. 并发跑每个 case（按 stage 选执行器）
   await mapLimit(selected, concurrency, async (c) => {
     const result = await insertEvalResult({ run_id: run.id, case_id: c.id });
     let exec: CaseExecution;
     try {
-      exec = await executor.run(c);
+      exec = await executorFor(c.stage).run(c);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await updateEvalResult(result.id, { status: 'error', error: msg.slice(0, 500) });

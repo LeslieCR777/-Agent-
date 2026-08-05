@@ -5,7 +5,7 @@ import { setupTestDb, teardownTestDb } from './helpers.js';
 await setupTestDb();
 const { generateCases, generateCaseRows } = await import('../src/eval/generator.js');
 const { createEvalCase, listEvalCases, listEvalRuns, listEvalResults, listEvalTraces, getEvalRun } = await import('../src/db/queries/eval.js');
-const { runEvalRun, inProcessStageExecutor, stubScorer, deepseekScorer, parseEvalJudgement } = await import('../src/eval/harness.js');
+const { runEvalRun, inProcessStageExecutor, httpPipelineExecutor, stubScorer, deepseekScorer, parseEvalJudgement } = await import('../src/eval/harness.js');
 const { runAgent } = await import('../src/worker/runner.js');
 const { config } = await import('../src/shared/config.js');
 
@@ -93,6 +93,26 @@ test('parseEvalJudgement：宽容解析判官 JSON', () => {
   assert.equal(parseEvalJudgement('{"评分":0.6,"feedback":"中"}').score, 6); // 0-1 → ×10
   assert.equal(parseEvalJudgement('不是JSON').score, null);
   assert.equal(parseEvalJudgement('{"score":8}').passed, null);
+});
+
+test('pipeline case 自动路由到 httpPipelineExecutor（不再 unknown stage）', async () => {
+  // 创建一个 pipeline case
+  await createEvalCase({
+    scenario: '全流水线评测', stage: 'pipeline',
+    prompt: JSON.stringify({ competitor: { name: '全链路', notes: '测全链' } }),
+    ground_truth: 'battlecard 应产出',
+  });
+  // 用 stub 判官 + 覆盖 executor 为 http（不真连服务器，直接验证路由不抛 unknown stage）
+  // 这里 httpPipelineExecutor 会尝试连服务器失败 → error 而非 unknown stage，证明路由正确
+  const { run } = await runEvalRun('pipe-route', {
+    stage: 'pipeline',
+    executor: httpPipelineExecutor({ apiBaseUrl: 'http://127.0.0.1:9', timeoutMs: 2000, pollIntervalMs: 500, cleanup: true }),
+    scorer: stubScorer(),
+  });
+  const results = await listEvalResults(run.id);
+  // 路由正确：结果是 error（连不上服务器），而不是 "unknown stage: pipeline" 解析错误
+  assert.equal(results[0].status, 'error');
+  assert.ok(!(results[0].error ?? '').includes('unknown stage'), '不应再出现 unknown stage 错误');
 });
 
 test('runEvalRuns 历史可查', async () => {
