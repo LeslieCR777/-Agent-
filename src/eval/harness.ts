@@ -167,12 +167,26 @@ export function inProcessStageExecutor(opts: InProcessOpts = {}): EvalExecutor {
       const sink = opts.onTrace ?? mem.sink;
       const ctx = buildStageCtx(c) as unknown as Parameters<typeof buildStagePrompt>[1];
       const prompt = buildStagePrompt(c.stage as Exclude<EvalStage, 'pipeline'>, ctx);
-      const result = await runAgent(prompt, {
-        onTrace: (t) => sink({ stage: c.stage, prompt: t.prompt, output: t.output, exit_code: t.exitCode, timed_out: t.timedOut ? 1 : 0, duration_ms: t.durationMs, model: t.model }),
-      }, workdir ? { cwd: workdir } : {});
-      if (result.timedOut) throw new Error('agent timed out');
-      if (result.exitCode !== 0) throw new Error(`agent exit ${result.exitCode}`);
-      return { output: result.output, latencyMs: result.durationMs, traces: mem.traces() };
+      // claude CLI 在 Windows 下偶发 exit 143（SIGTERM）且无输出，重试 3 次提升稳定性
+      let lastErr: Error | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const result = await runAgent(prompt, {
+            onTrace: (t) => sink({ stage: c.stage, prompt: t.prompt, output: t.output, exit_code: t.exitCode, timed_out: t.timedOut ? 1 : 0, duration_ms: t.durationMs, model: t.model }),
+          }, workdir ? { cwd: workdir } : {});
+          if (result.timedOut) throw new Error('agent timed out');
+          if (result.exitCode !== 0) {
+            lastErr = new Error(`agent exit ${result.exitCode}`);
+            if (attempt < 2) { await new Promise((r) => setTimeout(r, 1000 * (attempt + 1))); continue; }
+            throw lastErr;
+          }
+          return { output: result.output, latencyMs: result.durationMs, traces: mem.traces() };
+        } catch (err) {
+          lastErr = err instanceof Error ? err : new Error(String(err));
+          if (attempt < 2) { await new Promise((r) => setTimeout(r, 1000 * (attempt + 1))); }
+        }
+      }
+      throw lastErr ?? new Error('agent failed');
     },
   };
 }
