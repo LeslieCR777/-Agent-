@@ -11,14 +11,27 @@ import { AGENT_WORKDIR } from '../shared/constants.js';
  * 无引号/转义地狱。stdout 逐行回调（日志流式上报）。
  */
 
+/** 单次 Agent 调用轨迹（Golden Trace）：prompt/output/耗时/模型。评估框架用，热路径无 sink 时零开销。 */
+export interface AgentTrace {
+  prompt: string;
+  output: string;
+  exitCode: number;
+  timedOut: boolean;
+  durationMs: number;
+  model: string;
+  startedAt: string;
+}
+
 export interface RunnerCallbacks {
   onLog?: (line: string) => void;
+  onTrace?: (t: AgentTrace) => void;
 }
 
 export interface RunnerResult {
   output: string;
   exitCode: number;
   timedOut: boolean;
+  durationMs: number;
 }
 
 /** 长任务超时保护：默认 30 分钟，防止 claude 卡死导致 Worker 空转 */
@@ -57,6 +70,7 @@ export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}, opts: 
   return new Promise((resolvePromise, reject) => {
     const workdir = opts.cwd ?? resolveWorkspace();
     mkdirSync(workdir, { recursive: true });
+    const startedAt = Date.now();
 
     let child: ChildProcess;
     try {
@@ -95,7 +109,18 @@ export function runAgent(prompt: string, callbacks: RunnerCallbacks = {}, opts: 
       if (code !== 0 && errBuf && !out) {
         logger.error('runner', `agent exit ${code}: ${errBuf.slice(0, 300)}`);
       }
-      resolvePromise({ output: out, exitCode: code ?? -1, timedOut });
+      const durationMs = Date.now() - startedAt;
+      // Golden Trace：有 sink 才 emit（热路径零开销）
+      callbacks.onTrace?.({
+        prompt: prompt.slice(0, 4000),
+        output: out.slice(0, 8000),
+        exitCode: code ?? -1,
+        timedOut,
+        durationMs,
+        model: config.agentModel,
+        startedAt: new Date(startedAt).toISOString(),
+      });
+      resolvePromise({ output: out, exitCode: code ?? -1, timedOut, durationMs });
     });
 
     child.stdin?.write(prompt);

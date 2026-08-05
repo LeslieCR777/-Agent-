@@ -21,10 +21,20 @@ export const JUDGE_ROLES = [
 ] as const;
 
 /** 单次评审：调用 DeepSeek（OpenAI 兼容 chat/completions） */
-export async function judgeWithDeepSeek(role: string, prompt: string): Promise<string> {
+/** 判官调用轨迹（评估框架用） */
+export interface JudgeTrace {
+  role: string;
+  prompt: string;
+  response: string;
+  durationMs: number;
+  model: string;
+}
+
+export async function judgeWithDeepSeek(role: string, prompt: string, onTrace?: (t: JudgeTrace) => void): Promise<string> {
   if (!config.deepseek.apiKey) {
     throw new Error('DEEPSEEK_API_KEY not configured');
   }
+  const startedAt = Date.now();
   const res = await fetch(`${config.deepseek.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -47,6 +57,14 @@ export async function judgeWithDeepSeek(role: string, prompt: string): Promise<s
   };
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('DeepSeek returned empty response');
+  // Golden Trace：有 sink 才 emit
+  onTrace?.({
+    role,
+    prompt: prompt.slice(0, 2000),
+    response: content.slice(0, 4000),
+    durationMs: Date.now() - startedAt,
+    model: config.deepseek.model,
+  });
   return content;
 }
 

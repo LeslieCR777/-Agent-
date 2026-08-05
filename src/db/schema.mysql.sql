@@ -200,3 +200,60 @@ CREATE TABLE IF NOT EXISTS our_profile (
   target_market TEXT,
   updated_at    VARCHAR(40) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ===== 评测（Golden Dataset / Evaluation）=====
+
+CREATE TABLE IF NOT EXISTS eval_cases (
+  id          VARCHAR(36) PRIMARY KEY,
+  scenario    TEXT NOT NULL,              -- 业务场景描述
+  stage       VARCHAR(20) NOT NULL CHECK (stage IN ('monitor','research','compare','battlecard','quality','pipeline')),
+  prompt      TEXT NOT NULL,              -- 输入 prompt/上下文（pipeline 为竞品 seed JSON；单 stage 为 stage 输入 JSON）
+  ground_truth TEXT NOT NULL,             -- 期望输出（Ground Truth）
+  category    VARCHAR(50),                -- 场景模板分类（pricing_change / new_product / ...）
+  enabled     TINYINT NOT NULL DEFAULT 1,
+  created_at  VARCHAR(40) NOT NULL,
+  KEY idx_eval_cases_enabled (enabled, stage, category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS eval_runs (
+  id            VARCHAR(36) PRIMARY KEY,
+  name          VARCHAR(200) NOT NULL,
+  status        VARCHAR(20) NOT NULL DEFAULT 'running' CHECK (status IN ('running','completed','failed')),
+  cases_total   INT NOT NULL DEFAULT 0,
+  cases_passed  INT NOT NULL DEFAULT 0,
+  avg_score     DOUBLE,
+  avg_latency_ms DOUBLE,
+  started_at    VARCHAR(40) NOT NULL,
+  finished_at   VARCHAR(40),
+  KEY idx_eval_runs_started (started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS eval_results (
+  id            VARCHAR(36) PRIMARY KEY,
+  run_id        VARCHAR(36) NOT NULL,
+  case_id       VARCHAR(36) NOT NULL,
+  status        VARCHAR(20) NOT NULL DEFAULT 'running' CHECK (status IN ('running','passed','failed','error')),
+  passed        TINYINT,                  -- 判题通过（0/1）
+  score         DOUBLE,                   -- 判题分数 0-10
+  latency_ms    INT,
+  agent_output  LONGTEXT,                 -- 判题输入（Agent 输出，截断 20k）
+  judge_feedback TEXT,
+  error         TEXT,
+  created_at    VARCHAR(40) NOT NULL,
+  KEY idx_eval_results_run (run_id, case_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS eval_traces (
+  id          VARCHAR(36) PRIMARY KEY,
+  run_id      VARCHAR(36) NOT NULL,
+  case_id     VARCHAR(36) NOT NULL,
+  stage       VARCHAR(20) NOT NULL,       -- 该 trace 对应的 stage
+  prompt      TEXT,                       -- 截断 4k
+  output      TEXT,                       -- 截断 8k
+  exit_code   INT,
+  timed_out   TINYINT,
+  duration_ms INT,
+  model       VARCHAR(100),
+  created_at  VARCHAR(40) NOT NULL,
+  KEY idx_eval_traces_run (run_id, case_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

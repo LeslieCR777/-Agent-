@@ -7,7 +7,10 @@
     "api": "tsx src/server.ts",
     "worker": "tsx src/worker/index.ts",
     "lead": "tsx src/lead/index.ts",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "eval:gen": "tsx src/eval/cli.ts gen",
+    "eval": "tsx src/eval/cli.ts run",
+    "eval:report": "tsx src/eval/cli.ts report"
   },
   "dependencies": {
     "cron-parser": "^5.7.0",

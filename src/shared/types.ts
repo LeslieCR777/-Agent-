@@ -256,3 +256,62 @@ export interface AlertRecord {
   created_at: string;
   sent_at: string | null;
 }
+
+// ── 评测（Golden Dataset / Evaluation）──
+
+/** 评测目标的 stage：单个阶段 或 完整流水线 */
+export type EvalStage = 'monitor' | 'research' | 'compare' | 'battlecard' | 'quality' | 'pipeline';
+
+export type EvalRunStatus = 'running' | 'completed' | 'failed';
+export type EvalResultStatus = 'running' | 'passed' | 'failed' | 'error';
+
+export interface EvalCase {
+  id: string;
+  scenario: string;      // 业务场景描述
+  stage: EvalStage;
+  prompt: string;        // 输入 prompt/上下文（pipeline 为竞品 seed JSON；单 stage 为 stage 输入 JSON）
+  ground_truth: string;  // 期望输出（Ground Truth）
+  category: string | null;
+  enabled: number;
+  created_at: string;
+}
+
+export interface EvalRun {
+  id: string;
+  name: string;
+  status: EvalRunStatus;
+  cases_total: number;
+  cases_passed: number;
+  avg_score: number | null;
+  avg_latency_ms: number | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface EvalResult {
+  id: string;
+  run_id: string;
+  case_id: string;
+  status: EvalResultStatus;
+  passed: number | null;
+  score: number | null;
+  latency_ms: number | null;
+  agent_output: string | null;
+  judge_feedback: string | null;
+  error: string | null;
+  created_at: string;
+}
+
+export interface EvalTrace {
+  id: string;
+  run_id: string;
+  case_id: string;
+  stage: string;
+  prompt: string | null;
+  output: string | null;
+  exit_code: number | null;
+  timed_out: number | null;
+  duration_ms: number | null;
+  model: string | null;
+  created_at: string;
+}
