@@ -8,8 +8,13 @@ import type { CiStage } from '../shared/types.js';
  * - agent 返回各 stage 可解析的样例 JSON（替代 claude CLI 输出）
  */
 
+/**
+ * Demo 模式判定：只认显式开关 CI_DEMO_MODE=true。
+ * 注意：不再因"缺 SERPAPI/SMTP"隐式降级 demo ——
+ * 只要 AGENT_CLI=claude（或配了 DeepSeek）就能真实分析，搜索无 key 时 tools 层自行降级。
+ */
 export function isDemo(): boolean {
-  return config.ciDemoMode || (!config.serpApi.key && !config.smtp.host);
+  return config.ciDemoMode;
 }
 
 // ── 桩数据 ─────────────────────────────────────────────

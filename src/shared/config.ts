@@ -24,7 +24,14 @@ function loadDotEnv(): void {
     const eq = t.indexOf('=');
     if (eq === -1) continue;
     const k = t.slice(0, eq).trim();
-    const v = t.slice(eq + 1).trim();
+    let v = t.slice(eq + 1).trim();
+    // 去掉行内注释（标准 dotenv 行为：值里以空格开头后的 # 视为注释）
+    const hashIdx = v.indexOf(' #');
+    if (hashIdx !== -1) v = v.slice(0, hashIdx).trim();
+    // 去掉可能包裹值的引号
+    if (v.length >= 2 && (v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1);
+    }
     // 已有环境变量优先（命令行注入 > .env）
     if (process.env[k] === undefined) process.env[k] = v;
   }

@@ -252,6 +252,28 @@
   .bc-pitch { font-style:italic; color:var(--accent); border-left:3px solid var(--primary-2); padding-left:12px; }
 
   /* ══════════ 日志 ══════════ */
+  /* Agent 流水线流程状态条 */
+  .pipeline-flow { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .p-step {
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:10px 14px; border-radius:12px; background:var(--bg-soft);
+    border:1px solid var(--border); color:var(--muted);
+    min-width:86px; transition:all .3s ease;
+  }
+  .p-step .p-ico { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; background:var(--card); transition:all .3s ease; }
+  .p-step .p-ico svg { width:16px; height:16px; }
+  .p-step b { font-size:12.5px; }
+  .p-step small { font-size:10px; color:var(--faint); text-transform:lowercase; }
+  .p-arrow { color:var(--faint); font-size:16px; }
+  .p-step.active {
+    border-color:var(--primary-2); background:rgba(139,92,246,.12);
+    box-shadow:0 0 0 3px rgba(139,92,246,.15); color:var(--text);
+    animation:pulse-step 1.6s infinite;
+  }
+  .p-step.active .p-ico { background:var(--grad); color:#fff; }
+  .p-step.done { border-color:rgba(52,211,153,.4); color:var(--success); }
+  .p-step.done .p-ico { background:rgba(52,211,153,.15); color:var(--success); }
+  @keyframes pulse-step { 50% { box-shadow:0 0 0 6px rgba(139,92,246,.07); } }
   .log {
     background:#070c1a; color:#7dd3fc; font-family:var(--mono); font-size:12px;
     padding:14px; border-radius:var(--radius-sm); max-height:420px; overflow-y:auto;
@@ -315,6 +337,7 @@
       <h2><i data-lucide="trophy"></i>竞品管理</h2>
       <form id="comp-form" class="form-row">
         <label class="field">竞品名称<input id="c-name" placeholder="如 Nike / 安踏 / 飞书" required></label>
+        <label class="field">价格（元）<input id="c-price" placeholder="如 1329，留空则 agent 自行搜索" style="width:110px"></label>
         <label class="field">官网 URL<input id="c-website" placeholder="https://…（可选）"></label>
         <label class="field" style="flex:1.6">监控页面（逗号分隔）
           <input id="c-urls" placeholder="https://…/pricing, https://…/careers">
@@ -337,6 +360,26 @@
 
   <!-- ══════════ 竞品情报 ══════════ -->
   <section class="panel" id="tab-ci">
+    <!-- Agent 流水线流程状态条：5 个 agent 实时高亮当前执行阶段 -->
+    <div class="card" style="margin-bottom:18px">
+      <h2><i data-lucide="workflow"></i>Agent 流水线</h2>
+      <div class="pipeline-flow" id="pipeline-flow">
+        <div class="p-step" data-stage="monitor"><div class="p-ico"><i data-lucide="eye"></i></div><b>监控</b><small>monitor</small></div>
+        <div class="p-arrow">→</div>
+        <div class="p-step" data-stage="research"><div class="p-ico"><i data-lucide="search"></i></div><b>调研</b><small>research</small></div>
+        <div class="p-arrow">→</div>
+        <div class="p-step" data-stage="compare"><div class="p-ico"><i data-lucide="bar-chart-3"></i></div><b>对比</b><small>compare</small></div>
+        <div class="p-arrow">→</div>
+        <div class="p-step" data-stage="battlecard"><div class="p-ico"><i data-lucide="swords"></i></div><b>战卡</b><small>battlecard</small></div>
+        <div class="p-arrow">→</div>
+        <div class="p-step" data-stage="quality"><div class="p-ico"><i data-lucide="shield-check"></i></div><b>评审</b><small>quality</small></div>
+      </div>
+      <div id="pipeline-status" style="margin-top:10px;color:var(--faint);font-size:12px">当前无流水线在运行，触发「分析」后实时显示每个 Agent 进度</div>
+    </div>
+    <div class="card" style="margin-bottom:18px">
+      <h2><i data-lucide="align-left"></i>一段话分析总结</h2>
+      <div id="ci-summary" class="bc-val" style="line-height:1.8">暂无总结（触发分析后自动生成叙述式结论）</div>
+    </div>
     <div class="grid">
       <div class="card">
         <h2><i data-lucide="bar-chart-3"></i>对比矩阵 <small id="matrix-comp" style="color:var(--faint);text-transform:none"></small></h2>
@@ -763,6 +806,9 @@ async function runMonitor(id, btn) {
 $('comp-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = { name: $('c-name').value.trim(), website: $('c-website').value.trim() || undefined };
+  // 用户自填价格 → 存进 notes（research 阶段会作为"已知信息"采信）
+  const price = $('c-price').value.trim();
+  if (price) body.notes = `用户自填价格：${price} 元（分析时优先采信）`;
   const urls = $('c-urls').value.split(',').map((u) => u.trim()).filter(Boolean);
   if (urls.length) body.monitor_urls = urls;
   if (!body.name) return;
@@ -770,8 +816,8 @@ $('comp-form').addEventListener('submit', async (e) => {
   btnLoading(btn, true);
   try {
     const r = await api('/api/competitors', { method: 'POST', body: JSON.stringify(body) });
-    toast(`竞品已注册: ${r.competitor.name}`);
-    $('c-name').value = ''; $('c-website').value = ''; $('c-urls').value = '';
+    toast(`竞品已注册: ${r.competitor.name}${price ? `（价格 ¥${price}）` : ''}`);
+    $('c-name').value = ''; $('c-price').value = ''; $('c-website').value = ''; $('c-urls').value = '';
     await loadCompetitors();
     celebrate();
   } catch (err) { toast(`注册失败: ${err.message}`); }
@@ -787,7 +833,34 @@ async function loadCiDetail(id) {
     renderCiChanges(d.changes);
     renderCiMatrix(d.matrix, d.competitor);
     renderCiBattlecard(d.battlecard);
+    renderCiSummary(d);
   } catch {}
+}
+/** 一段话分析总结：基于对比矩阵优势项 + 调研洞察，生成叙述式结论 */
+function renderCiSummary(d) {
+  const el = $('ci-summary');
+  if (!el) return;
+  const name = d.competitor?.name || '该竞品';
+  const insights = (d.insights || []).slice(0, 3);
+  const matrix = d.matrix;
+  const parts = [];
+  if (matrix && matrix.overall_assessment) {
+    parts.push(matrix.overall_assessment);
+  } else {
+    // 无整体评估时，从矩阵归纳优势维度
+    const dims = matrix?.dimensions || [];
+    const ourWin = dims.filter((x) => x.our_score > x.competitor_score).map((x) => x.dimension);
+    const compWin = dims.filter((x) => x.competitor_score > x.our_score).map((x) => x.dimension);
+    if (ourWin.length) parts.push(`我方在「${ourWin.slice(0,3).join('、')}」维度领先`);
+    if (compWin.length) parts.push(`竞品在「${compWin.slice(0,3).join('、')}」维度领先`);
+  }
+  if (insights.length) {
+    const key = insights.map((i) => i.summary).join(' ');
+    parts.push(key.slice(0, 180));
+  }
+  const score = d.battlecard?.quality_score;
+  if (score) parts.push(`综合分析已通过 3 位 Agent 评审，质检分 ${score}/10。`);
+  el.innerHTML = parts.length ? esc(`${name}：${parts.join(' ')}`) : '暂无总结';
 }
 function renderCiChanges(changes) {
   $('ci-changes').innerHTML = (changes && changes.length)
@@ -801,10 +874,35 @@ function renderCiChanges(changes) {
       </tr>`).join('')
     : '<tr><td colspan="5" class="empty">暂无变化记录</td></tr>';
 }
+/** 8 维对比雷达图（纯 SVG，无外部依赖）。我方=靛蓝，竞品=橙红。 */
+function buildRadar(dims) {
+  const size = 220, cx = size/2, cy = size/2, R = size/2 - 34;
+  const n = dims.length;
+  const ang = (i) => -Math.PI/2 + (2*Math.PI*i)/n; // 从顶部顺时针
+  const pt = (i, v) => { const a = ang(i); return [cx + R*v/10*Math.cos(a), cy + R*v/10*Math.sin(a)]; };
+  const ring = (lv) => Array.from({length:n}, (_,i) => pt(i, lv).join(',')).join(' ');
+  // 网格环（10/7.5/5/2.5 分）
+  const rings = [10,7.5,5,2.5].map(r => `<polygon points="${ring(r)}" fill="none" stroke="rgba(139,156,200,.18)" stroke-width="1"/>`).join('');
+  // 轴线
+  const axes = Array.from({length:n}, (_,i) => { const [x,y] = pt(i,10); return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="rgba(139,156,200,.15)" stroke-width="1"/>`; }).join('');
+  const ours = dims.map((d,i) => pt(i, d.our_score)).map(p => p.join(',')).join(' ');
+  const comps = dims.map((d,i) => pt(i, d.competitor_score)).map(p => p.join(',')).join(' ');
+  const labels = dims.map((d,i) => { const [x,y] = pt(i, 11.5); const short = d.dimension.replace(' & Value','').replace(' & Momentum','').slice(0,14); return `<text x="${x}" y="${y}" text-anchor="middle" font-size="8.5" fill="#8b9cc8">${esc(short)}</text>`; }).join('');
+  return `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:${size}px;margin:0 auto 6px;display:block">
+    ${rings}${axes}
+    <polygon points="${ours}" fill="rgba(99,102,241,.25)" stroke="#6366f1" stroke-width="2"/>
+    <polygon points="${comps}" fill="rgba(248,113,113,.2)" stroke="#f87171" stroke-width="2"/>
+    ${labels}
+    <circle cx="${cx}" cy="${cy}" r="3" fill="#6366f1"/>
+    <text x="12" y="14" font-size="9" fill="#6366f1">● 我方</text>
+    <text x="12" y="26" font-size="9" fill="#f87171">● 竞品</text>
+  </svg>`;
+}
+
 function renderCiMatrix(matrix, competitor) {
   $('matrix-comp').textContent = competitor ? `· vs ${competitor.name}` : '';
   $('ci-matrix').innerHTML = (matrix && matrix.dimensions && matrix.dimensions.length)
-    ? matrix.dimensions.map((d, i) => `
+    ? buildRadar(matrix.dimensions) + matrix.dimensions.map((d, i) => `
       <div>
         <div class="legend"><span>我方</span><span>${esc(d.dimension)}</span><span>竞品</span></div>
         <div class="scorebar">
@@ -912,6 +1010,43 @@ if (!window.lucide) {
   document.head.appendChild(Object.assign(document.createElement('style'), { textContent: 'i[data-lucide]{display:none}' }));
 }
 
+// ── Agent 流水线流程状态条 ──
+const STAGE_EVENT = {
+  ci_pipeline_started: 'monitor',
+  ci_change_detected: 'monitor',
+  ci_insight_created: 'research',
+  ci_matrix_created: 'compare',
+  ci_battlecard_created: 'battlecard',
+  ci_quality_checked: 'quality',
+};
+const STAGE_ORDER = ['monitor', 'research', 'compare', 'battlecard', 'quality'];
+function updatePipelineFromEvent(ev) {
+  const stage = STAGE_EVENT[ev.type];
+  const flow = $('pipeline-flow');
+  if (!flow) return;
+  const steps = flow.querySelectorAll('.p-step');
+  steps.forEach((s) => s.classList.remove('active'));
+  if (stage) {
+    // 高亮当前 stage，之前 stage 标记 done
+    const idx = STAGE_ORDER.indexOf(stage);
+    steps.forEach((s) => {
+      const si = STAGE_ORDER.indexOf(s.dataset.stage);
+      if (si < idx) s.classList.add('done');
+      else if (si === idx) s.classList.add('active');
+      else s.classList.remove('done');
+    });
+    $('pipeline-status').textContent = `● ${STAGE_ORDER[idx]} Agent 执行中…（${fmt(ev.created_at)}）`;
+  }
+  if (ev.type === 'ci_quality_checked') {
+    const payload = ev.payload ? JSON.parse(ev.payload) : {};
+    const passed = payload.passed ? '通过' : '需回炉';
+    $('pipeline-status').textContent = `◆ 评审完成：${passed}（score ${payload.score ?? '-'}）`;
+    // 全部 done（终态）
+    steps.forEach((s) => { s.classList.remove('active'); s.classList.add('done'); });
+  }
+  lucideRefresh();
+}
+
 // ── WebSocket 事件流 ──
 function addLog(msg) {
   const log = $('log');
@@ -936,6 +1071,7 @@ function connect() {
         if (ev.type === 'task_completed' || ev.type === 'task_failed') void loadTasks();
         if (ev.type.startsWith('ci_')) {
           void loadCompetitors(); void loadCiAlerts(); void loadCiInsights();
+          updatePipelineFromEvent(ev);
         }
       }
     } catch {}

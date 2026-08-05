@@ -52,13 +52,14 @@ export async function judgeWithDeepSeek(role: string, prompt: string): Promise<s
 
 /**
  * 三评审投票聚合：
- * - score = round(三均值)
+ * - score = round(三均值)，钳制到 1-10（防极端值污染）
  * - passed = score >= 阈值（多数票通过 = 均值过线）
  * - feedback = 三 feedback 拼接（回 research 重搜时全部带上）
  */
 export function aggregateVotes(votes: JudgeVote[]): { score: number; feedback: string } {
   if (votes.length === 0) return { score: 0, feedback: '无评审结果' };
-  const score = Math.round(votes.reduce((a, v) => a + v.score, 0) / votes.length);
+  const raw = votes.reduce((a, v) => a + v.score, 0) / votes.length;
+  const score = Math.max(1, Math.min(10, Math.round(raw)));
   const feedback = votes
     .map((v) => `[${v.role}] ${v.feedback}`)
     .join('\n')

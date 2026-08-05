@@ -161,8 +161,9 @@ async function ciRunAgent(
  * - 聚合：score = 三均值取整，feedback = 三反馈拼接
  */
 async function runQualityJudges(competitor: Competitor, battlecard: Battlecard): Promise<{ score: number; feedback: string }> {
-  if (isDemo() || !config.deepseek.apiKey) {
-    logger.info('ci', `demo/no-DeepSeek: quality uses ${JUDGE_ROLES.length} stub judges`);
+  // 评审只依赖 DEEPSEEK_API_KEY：配了就走真实 3 评审（评审不依赖 SERPAPI/SMTP）
+  if (!config.deepseek.apiKey) {
+    logger.info('ci', `no-DeepSeek: quality uses ${JUDGE_ROLES.length} stub judges`);
     const votes = demoJudgeVotes();
     return aggregateVotes(votes);
   }
@@ -173,9 +174,15 @@ async function runQualityJudges(competitor: Competitor, battlecard: Battlecard):
       try {
         const focusPrompt = buildQualityPrompt(competitor, battlecard, role.key);
         const out = await judgeWithDeepSeek(role.label, focusPrompt);
-        const parsed = parseJsonBlock<{ score?: number; feedback?: string }>(out);
-        if (!parsed || typeof parsed.score !== 'number') throw new Error('parse judge failed');
-        return { role: role.label, score: parsed.score, feedback: parsed.feedback ?? '' };
+        const parsed = parseJsonBlock<Record<string, unknown>>(out);
+        // 兼容多种 score 字段名：score / *_score / 评分；feedback 同理
+        const score = extractScore(parsed);
+        // 校验 score 合法（1-10），异常值视为该评审失败（避免污染聚合）
+        if (score === null || score < 1 || score > 10) {
+          throw new Error('parse judge failed or score out of range');
+        }
+        const feedback = (parsed?.feedback ?? parsed?.comments ?? parsed?.suggestions ?? '') as string;
+        return { role: role.label, score, feedback: Array.isArray(feedback) ? feedback.join('；') : String(feedback) };
       } catch (err) {
         logger.warn('ci', `${role.key} judge failed: ${err instanceof Error ? err.message : err}`);
         return null;
@@ -360,4 +367,28 @@ function parseMonitorUrls(competitor: Competitor): string[] {
 function extractFeedback(prompt: string): string | null {
   const m = prompt.match(/\[CI feedback=(.+)\]$/);
   return m ? m[1].trim() : null;
+}
+
+/**
+ * 从评审输出 JSON 中提取分数。DeepSeek 输出字段名不稳定：
+ * 可能是 score / *_score / 评分 / rating。返回合法 1-10 分或 null。
+ */
+function extractScore(parsed: Record<string, unknown> | null): number | null {
+  if (!parsed) return null;
+  const candidates: unknown[] = [
+    parsed.score,
+    parsed.rating,
+    parsed['评分'],
+    parsed.completeness_score,
+    parsed.accuracy_score,
+    parsed.actionable_score,
+  ];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (!Number.isFinite(n)) continue;
+    // 0-1 区间（如 0.2）→ 乘 10 换算到 1-10
+    const score = n > 0 && n <= 1 ? Math.round(n * 10) : n;
+    if (score >= 1 && score <= 10) return score;
+  }
+  return null;
 }

@@ -64,13 +64,15 @@ export function buildResearchPrompt(
     .map((s) => `### 搜索「${s.query}」\n` + s.results.map((r) => `- ${r.title} | ${r.link} | ${r.snippet}`).join('\n'))
     .join('\n\n');
   const feedbackBlock = feedback ? `\n上轮质检反馈（必须优先回应）：${feedback}\n` : '';
+  // 用户自填的已知信息（notes 里常含价格/规格/销量等一手数据）
+  const knownBlock = competitor.notes ? `\n用户提供的已知信息（优先采信）：${competitor.notes}\n` : '';
   return [
-    `你是一名竞品市场研究分析师。请基于已检测到的竞品变化和搜索结果，对「${competitor.name}」做深度调研。`,
+    `你是一名竞品市场研究分析师。请基于已检测到的竞品变化、用户提供的已知信息、搜索结果，对「${competitor.name}」做深度调研。`,
     ``,
     `调研方法：对每个主题先推理再下结论——先列出关键证据（变化/搜索命中），再推断对我方的影响。每条结论必须能回溯到来源，禁止臆造。`,
     ``,
     `已检测到的变化：\n${changesText}`,
-    ``,
+    `${knownBlock}`,
     `搜索结果：\n${searchText}${feedbackBlock}`,
     ``,
     `输出 JSON 数组，每个元素：{"topic":"调研主题","summary":"两到三句话摘要","key_findings":["要点1","要点2"],"impact":"对我方的影响评估（一句话，含影响方向与程度）","sources":[{"title":"来源标题","url":"URL"}],"confidence":0到1之间的数字}。`,

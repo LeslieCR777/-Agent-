@@ -205,6 +205,14 @@ async function main() {
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // 全局兜底：单个未捕获异常/拒绝不崩整个 API（记日志，进程继续）
+  process.on('uncaughtException', (err) => {
+    logger.error('server', `uncaughtException: ${err instanceof Error ? err.stack ?? err.message : err}`);
+  });
+  process.on('unhandledRejection', (reason) => {
+    logger.error('server', `unhandledRejection: ${reason instanceof Error ? reason.message : String(reason)}`);
+  });
 }
 
 /**
