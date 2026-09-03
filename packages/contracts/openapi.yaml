@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  title: CI Agent Swarm API
+  version: 2.1.0
+servers:
+  - url: http://localhost:3013
+security:
+  - userBearer: []
+paths:
+  /api/auth/login:
+    post:
+      security: []
+      summary: 用户登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200': { description: Signed eight-hour session }
+        '401': { $ref: '#/components/responses/Error' }
+  /api/analysis-briefs:
+    post:
+      summary: 创建不可变分析任务单
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnalysisBriefInput' }
+      responses:
+        '201': { description: Created }
+  /api/analysis-briefs/{id}/preflight:
+    get:
+      summary: 分析前检查
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Capability and completeness result }
+  /api/runs:
+    post:
+      summary: 创建运行并通过事务 Outbox 排队
+      responses:
+        '202': { description: Queued }
+    get:
+      summary: 分页筛选运行
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/RunStatus' } }
+        - { name: competitor_id, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200': { description: Paginated runs }
+  /api/runs/{id}:
+    get:
+      summary: 运行、冻结快照、阶段和证据详情
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Run detail }
+  /api/runs/{id}/cancel:
+    post:
+      summary: 取消未完成运行
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Cancelled }
+  /api/runs/{id}/retry:
+    post:
+      summary: 重试失败阶段或审核后从 compare 继续
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '202': { description: Queued }
+  /api/evidence:
+    get:
+      summary: 分页筛选证据，默认 pending
+      responses:
+        '200': { description: Paginated evidence }
+    post:
+      security: [{serviceBearer: []}]
+      summary: Worker 上报原始证据快照
+      responses:
+        '201': { description: Created }
+  /api/evidence/{id}/review:
+    patch:
+      summary: 审核证据并传播失效状态
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Reviewed }
+  /api/claims:
+    get:
+      summary: 分页筛选 Claim
+      responses:
+        '200': { description: Paginated claims }
+    post:
+      security: [{serviceBearer: []}]
+      summary: Verifier 上报 Claim 与 Evidence 引用
+      responses:
+        '201': { description: Created }
+  /api/claims/{id}/review:
+    patch:
+      summary: 审核 Claim
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Reviewed }
+  /api/reports:
+    post:
+      summary: 用已核验 Claim 创建版本化报告
+      responses:
+        '201': { description: Created }
+  /api/reports/{id}/{action}:
+    post:
+      summary: 提交、批准或发布报告
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+        - { name: action, in: path, required: true, schema: { type: string, enum: [submit, approve, publish] } }
+      responses:
+        '200': { description: Transitioned }
+        '403': { $ref: '#/components/responses/Error' }
+  /api/projects:
+    get:
+      summary: 查询当前用户可访问的研究项目
+      responses:
+        '200': { description: Project list }
+    post:
+      summary: 创建持续研究项目
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResearchProjectInput' }
+      responses:
+        '201': { description: Created }
+  /api/projects/{id}:
+    get:
+      summary: 查询项目成员与产品组合
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Project detail }
+  /api/projects/{id}/dashboard:
+    get:
+      summary: 查询项目覆盖率与数据新鲜度摘要
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Dashboard metrics }
+  /api/projects/{id}/members:
+    post:
+      summary: 添加或更新项目成员角色
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Member updated }
+  /api/projects/{id}/skus:
+    post:
+      summary: 将我方或竞品 SKU 加入项目
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: SKU attached }
+  /api/catalog:
+    get:
+      summary: 查询 Company、Brand、Series、SKU 完整层级
+      responses:
+        '200': { description: Catalog rows }
+  /api/catalog/items/{type}:
+    post:
+      summary: 创建产品层级节点
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string, enum: [company, brand, series, sku] } }
+      responses:
+        '201': { description: Created or existing item }
+  /api/catalog/imports/preview:
+    post:
+      summary: 预览 CSV 字段映射及重复 SKU
+      responses:
+        '201': { description: Import preview }
+  /api/catalog/imports/{id}/confirm:
+    post:
+      summary: 人工确认后导入产品目录
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': { description: Import result }
+  /api/skus/{id}/price-snapshots:
+    post:
+      summary: 保存指定市场和渠道的价格快照，不自动换算币种
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '201': { description: Created }
+  /api/skus/{id}/product-snapshots:
+    post:
+      summary: 保存参数快照及来源
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '201': { description: Created }
+  /api/skus/{id}/timeline:
+    get:
+      summary: 按市场和渠道查询价格与参数时间线
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+        - { name: market, in: query, schema: { type: string } }
+        - { name: channel, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Product and price snapshots }
+components:
+  securitySchemes:
+    userBearer: { type: http, scheme: bearer }
+    serviceBearer: { type: http, scheme: bearer }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    Error:
+      description: Unified error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    RunStatus:
+      type: string
+      enum: [draft, queued, running, waiting_review, published, failed, cancelled]
+    AnalysisBriefInput:
+      type: object
+      required: [competitor_ids, purpose, market]
+      properties:
+        our_product_id: { type: [string, 'null'] }
+        competitor_ids: { type: array, minItems: 1, items: { type: string } }
+        purpose: { type: string, enum: [pricing, product, battlecard, market_entry, comprehensive, competitor_only] }
+        market: { type: string }
+        max_runtime_seconds: { type: integer, minimum: 1, maximum: 86400 }
+        cost_budget: { type: number, exclusiveMinimum: 0 }
+        allow_unverified: { type: boolean, default: false }
+    ResearchProjectInput:
+      type: object
+      required: [name, objective, market, channels, topics]
+      properties:
+        name: { type: string, maxLength: 300 }
+        objective: { type: string }
+        business_context: { type: string }
+        market: { type: string, maxLength: 100 }
+        channels: { type: array, minItems: 1, items: { type: string } }
+        topics: { type: array, minItems: 1, items: { type: string } }
+        source_policy: { type: object, additionalProperties: true }
+        report_template: { type: string }
+        alert_policy: { type: object, additionalProperties: true }
+    Error:
+      type: object
+      required: [code, message, trace_id]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: {}
+        trace_id: { type: string }

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
 
 await setupTestDb();
-const { createTask, getTask, claimNextTask, updateTaskStatus } = await import('../src/db/queries/tasks.js');
-const { registerAgent, getAgent } = await import('../src/db/queries/agents.js');
-const { withTransaction, exec } = await import('../src/db/index.js');
+const { createTask, getTask, claimNextTask, updateTaskStatus } = await import('@api/db/queries/tasks.js');
+const { registerAgent, getAgent } = await import('@api/db/queries/agents.js');
+const { withTransaction, exec } = await import('@api/db/index.js');
 
 /** 清空待分配池（消除跨测试残留任务，保证 claim 只领到本测试创建的任务） */
 async function clearUnassigned(): Promise<void> {

@@ -1,7 +1,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
-import { createCompetitor, getCompetitor, listCompetitors, listEnabledCompetitors, updateCompetitor, deleteCompetitor, touchCompetitor } from '../src/db/queries/competitors.js';
+import { createCompetitor, getCompetitor, listCompetitors, listEnabledCompetitors, updateCompetitor, deleteCompetitor, touchCompetitor } from '@api/db/queries/competitors.js';
 
 beforeEach(async () => { await setupTestDb(); });
 afterEach(async () => { await teardownTestDb(); });

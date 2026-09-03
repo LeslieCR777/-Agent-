@@ -1,0 +1,95 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+      MYSQL_DATABASE: agent_swarm
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD:-change-me}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    command: ["npm", "run", "migrate:mysql"]
+    environment: &backend-env
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+      MYSQL_DATABASE: agent_swarm
+      API_KEY: ${API_KEY:-replace-in-production}
+      SERVICE_API_KEY: ${SERVICE_API_KEY:-replace-worker-key}
+      ALLOW_LEGACY_API_KEY: ${ALLOW_LEGACY_API_KEY:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-replace-with-12-chars}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    command: ["npm", "run", "api"]
+    environment:
+      <<: *backend-env
+      PORT: 3013
+      WEB_ORIGINS: ${WEB_ORIGINS:-http://localhost:8080}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - asset-data:/app/assets
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3013/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    command: ["npm", "run", "orchestrator"]
+    environment: *backend-env
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    command: ["npm", "run", "worker", "--", "--name", "worker-1"]
+    environment:
+      <<: *backend-env
+      API_BASE_URL: http://api:3013
+      CI_DEMO_MODE: ${CI_DEMO_MODE:-true}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.web
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  asset-data:

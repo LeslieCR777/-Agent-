@@ -1,5 +1,6 @@
 export const CONSOLE_NAV_ITEMS = [
   { key: 'projects', label: '研究项目', description: '管理持续研究项目' },
+  { key: 'competitors', label: '竞品库', description: '登记竞品并管理监控入口' },
   { key: 'runs', label: '分析运行', description: '查看分析队列与运行详情' },
   { key: 'evidence', label: '证据审核', description: '审核待确认的研究证据' },
 ] as const;
@@ -40,4 +41,3 @@ export function routeToHash(route: ConsoleRoute): string {
   }
   return '#' + route.tab;
 }
-

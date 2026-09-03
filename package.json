@@ -3,26 +3,39 @@
   "version": "1.0.0",
   "description": "竞品情报多 Agent 市场研究系统（Competitive Intelligence Multi-Agent）",
   "type": "module",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "api": "tsx src/server.ts",
-    "worker": "tsx src/worker/index.ts",
-    "lead": "tsx src/lead/index.ts",
+    "api": "tsx apps/api/src/index.ts",
+    "orchestrator": "tsx apps/orchestrator/src/index.ts",
+    "worker": "tsx apps/worker/src/index.ts",
+    "lead": "tsx apps/worker/src/lead.ts",
+    "web": "vite --config apps/web/vite.config.ts",
+    "build:web": "vite build --config apps/web/vite.config.ts",
+    "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "eval:gen": "tsx src/eval/cli.ts gen",
-    "eval": "tsx src/eval/cli.ts run",
-    "eval:report": "tsx src/eval/cli.ts report"
+    "eval:gen": "tsx packages/agent-runtime/src/eval/cli.ts gen",
+    "eval": "tsx packages/agent-runtime/src/eval/cli.ts run",
+    "eval:report": "tsx packages/agent-runtime/src/eval/cli.ts report",
+    "migrate:mysql": "tsx infrastructure/migrations/migrate.ts"
   },
   "dependencies": {
     "cron-parser": "^5.7.0",
     "mysql2": "^3.23.2",
     "nodemailer": "^9.0.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^8.0.1",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
     "@types/ws": "^8.5.12",
+    "@vitejs/plugin-react": "^5.0.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vite": "^7.1.4"
   }
 }

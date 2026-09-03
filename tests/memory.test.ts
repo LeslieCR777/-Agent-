@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
 
 await setupTestDb();
-const { embedTexts, hasRemoteEmbedding } = await import('../src/memory/embed.js');
-const { cosine } = await import('../src/memory/search.js');
-const { createMemory, allMemoriesWithVector, deleteMemory } = await import('../src/db/queries/memories.js');
+const { embedTexts, hasRemoteEmbedding } = await import('@api/memory/embed.js');
+const { cosine } = await import('@api/memory/search.js');
+const { createMemory, allMemoriesWithVector, deleteMemory } = await import('@api/db/queries/memories.js');
 
 after(() => { void teardownTestDb(); });
 

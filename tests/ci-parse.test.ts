@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseJsonBlock, parseJsonArray } from '../src/ci/parse.js';
+import { parseJsonBlock, parseJsonArray } from '@runtime/ci/parse.js';
 
 test('parseJsonBlock：裸 JSON 对象', () => {
   const r = parseJsonBlock<{ a: number }>('{"a":1}');

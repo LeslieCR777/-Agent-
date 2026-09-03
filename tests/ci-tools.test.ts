@@ -1,9 +1,10 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
-import { contentHash } from '../src/ci/tools/hash.js';
-import { extractText, extractPricing, extractJobListings } from '../src/ci/tools/extract.js';
-import { webSearch } from '../src/ci/tools/search.js';
+import { contentHash } from '@runtime/ci/tools/hash.js';
+import { extractText, extractPricing, extractJobListings } from '@runtime/ci/tools/extract.js';
+import { webSearch } from '@runtime/ci/tools/search.js';
+import { isAntiBotUrl, sourceAllowed } from '@runtime/ci/execute.js';
 
 beforeEach(async () => { await setupTestDb(); });
 afterEach(async () => { await teardownTestDb(); });
@@ -43,4 +44,16 @@ test('webSearch 无 key 回退 demo 桩', async () => {
   const results = await webSearch('竞品融资');
   assert.ok(results.length > 0);
   assert.ok(results.every((r) => r.title && r.link));
+});
+
+test('monitor 过滤高反爬电商域名', () => {
+  assert.equal(isAntiBotUrl('https://detail.tmall.com/item.htm?id=1'), true);
+  assert.equal(isAntiBotUrl('https://item.jd.com/1.html'), true);
+  assert.equal(isAntiBotUrl('https://www.nike.com/cn/t/phantom'), false);
+});
+
+test('来源类型不再被误判为域名白名单', () => {
+  assert.equal(sourceAllowed('https://www.nike.com/news', { included: ['official', 'news'], excluded: [] }), true);
+  assert.equal(sourceAllowed('https://example.com/news', { included: ['nike.com'], excluded: [] }), false);
+  assert.equal(sourceAllowed('https://news.nike.com/story', { included: ['nike.com'], excluded: [] }), true);
 });

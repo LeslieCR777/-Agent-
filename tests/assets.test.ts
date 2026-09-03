@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
 
 await setupTestDb();
-const { createAsset, listAssets, getAsset, deleteAsset, getAssets } = await import('../src/db/queries/assets.js');
+const { createAsset, listAssets, getAsset, deleteAsset, getAssets } = await import('@api/db/queries/assets.js');
 
 after(() => { void teardownTestDb(); });
 

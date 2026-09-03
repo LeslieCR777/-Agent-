@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
 
 await setupTestDb();
-const { generateCases, generateCaseRows } = await import('../src/eval/generator.js');
-const { createEvalCase, listEvalCases, listEvalRuns, listEvalResults, listEvalTraces, getEvalRun } = await import('../src/db/queries/eval.js');
-const { runEvalRun, inProcessStageExecutor, httpPipelineExecutor, stubScorer, deepseekScorer, parseEvalJudgement } = await import('../src/eval/harness.js');
-const { runAgent } = await import('../src/worker/runner.js');
-const { config } = await import('../src/shared/config.js');
+const { generateCases, generateCaseRows } = await import('@runtime/eval/generator.js');
+const { createEvalCase, listEvalCases, listEvalRuns, listEvalResults, listEvalTraces, getEvalRun } = await import('@api/db/queries/eval.js');
+const { runEvalRun, inProcessStageExecutor, httpPipelineExecutor, stubScorer, deepseekScorer, parseEvalJudgement } = await import('@runtime/eval/harness.js');
+const { runAgent } = await import('@runtime/runner.js');
+const { config } = await import('@platform/config.js');
 
 after(() => { void teardownTestDb(); });
 

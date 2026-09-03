@@ -1,15 +1,15 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
-import { createCompetitor } from '../src/db/queries/competitors.js';
+import { createCompetitor } from '@api/db/queries/competitors.js';
 import {
   upsertPageHash, insertChanges, listChanges,
   insertInsight, latestInsights,
   insertMatrix, latestMatrix,
   insertBattlecard, latestBattlecard, setBattlecardQuality,
   insertAlert, listAlerts, pendingHighCriticalChanges,
-} from '../src/db/queries/ci.js';
-import type { CompetitorChange } from '../src/shared/types.js';
+} from '@api/db/queries/ci.js';
+import type { CompetitorChange } from '@contracts/types.js';
 
 let compId = '';
 

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
 
 await setupTestDb();
-const { createTask, getTask, claimNextTask } = await import('../src/db/queries/tasks.js');
-const { registerAgent, heartbeat, getAgent } = await import('../src/db/queries/agents.js');
-const { exec } = await import('../src/db/index.js');
-const { runSweep } = await import('../src/heartbeat/sweeper.js');
-const { config } = await import('../src/shared/config.js');
+const { createTask, getTask, claimNextTask } = await import('@api/db/queries/tasks.js');
+const { registerAgent, heartbeat, getAgent } = await import('@api/db/queries/agents.js');
+const { exec } = await import('@api/db/index.js');
+const { runSweep } = await import('@orchestrator/heartbeat/sweeper.js');
+const { config } = await import('@platform/config.js');
 
 beforeEach(async () => {
   // 清空待分配池，避免跨测试残留

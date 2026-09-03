@@ -3,8 +3,20 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2023"],
-    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@contracts/*": ["packages/contracts/src/*"],
+      "@domain/*": ["packages/domain/src/*"],
+      "@runtime/*": ["packages/agent-runtime/src/*"],
+      "@platform/*": ["packages/platform/src/*"],
+      "@ui/*": ["packages/ui-components/src/*"],
+      "@api/*": ["apps/api/src/*"],
+      "@orchestrator/*": ["apps/orchestrator/src/*"],
+      "@worker/*": ["apps/worker/src/*"]
+    },
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"],
+    "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -12,5 +24,5 @@
     "noEmit": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx", "infrastructure/**/*.ts", "tests/**/*.ts"]
 }

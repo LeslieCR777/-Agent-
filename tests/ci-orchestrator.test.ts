@@ -1,12 +1,12 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { setupTestDb, teardownTestDb } from './helpers.js';
-import { createCompetitor, getCompetitor } from '../src/db/queries/competitors.js';
-import { getTask, updateTaskStatus } from '../src/db/queries/tasks.js';
-import { insertBattlecard, setBattlecardQuality } from '../src/db/queries/ci.js';
-import { parseCiTags, kickoffPipeline, onCiTaskCompleted } from '../src/ci/orchestrator.js';
-import { config } from '../src/shared/config.js';
-import { query } from '../src/db/index.js';
+import { createCompetitor, getCompetitor } from '@api/db/queries/competitors.js';
+import { getTask, updateTaskStatus } from '@api/db/queries/tasks.js';
+import { insertBattlecard, setBattlecardQuality } from '@api/db/queries/ci.js';
+import { parseCiTags, kickoffPipeline, onCiTaskCompleted } from '@orchestrator/ci/orchestrator.js';
+import { config } from '@platform/config.js';
+import { query } from '@api/db/index.js';
 
 let compId = '';
 let compName = '竞品 A';

@@ -24,7 +24,7 @@ export async function setupTestDb(): Promise<void> {
   const dbName = testDbName();
   process.env.MYSQL_DATABASE = dbName;
 
-  const { config } = await import('../src/shared/config.js');
+  const { config } = await import('@platform/config.js');
   config.embeddingApiKey = '';
   config.agentCli = 'echo'; // 测试环境用 echo 模拟 agent（避免依赖 claude）
   config.ciDemoMode = false;
@@ -52,19 +52,25 @@ export async function setupTestDb(): Promise<void> {
   }
 
   // 2. 建池（库已存在）
-  const { initDb } = await import('../src/db/index.js');
+  const { initDb } = await import('@api/db/index.js');
   await initDb();
 
   // 3. 每次 setup 建表 + 清空数据（本文件独立库，安全隔离）
   //    建表用独立连接（multipleStatements），清空用池连接
-  const { readFileSync } = await import('node:fs');
+  const { readFileSync, readdirSync } = await import('node:fs');
   const { resolve } = await import('node:path');
-  const schemaPath = resolve(process.cwd(), 'src/db/schema.mysql.sql');
+  const schemaPath = resolve(process.cwd(), 'infrastructure/migrations/schema.mysql.sql');
   const schema = readFileSync(schemaPath, 'utf8');
   // 去掉 CREATE DATABASE / USE / SET NAMES 行（连接已绑定测试库），只留建表
   const tableSql = schema
     .split('\n')
     .filter((line) => !/^\s*(CREATE DATABASE|USE |SET NAMES)/i.test(line))
+    .join('\n');
+  const migrationDir = resolve(process.cwd(), 'infrastructure/migrations');
+  const migrations = readdirSync(migrationDir)
+    .filter((name) => name.endsWith('.migration.sql'))
+    .sort()
+    .map((name) => readFileSync(resolve(migrationDir, name), 'utf8'))
     .join('\n');
 
   const ddlConn = await mysql.createConnection({
@@ -76,13 +82,13 @@ export async function setupTestDb(): Promise<void> {
     multipleStatements: true,
   });
   try {
-    await ddlConn.query(tableSql);
+    await ddlConn.query(`${tableSql}\n${migrations}`);
   } finally {
     await ddlConn.end();
   }
 
   // 清空所有表（用池连接 DELETE，避免 TRUNCATE 的 DDL 锁与并发语句冲突）
-  const { getPool } = await import('../src/db/index.js');
+  const { getPool } = await import('@api/db/index.js');
   const pool = getPool();
   const [tables] = (await pool.query(`SHOW TABLES`)) as unknown as [{ [k: string]: string }[]];
   const names = tables.map((r) => Object.values(r)[0] as string);
@@ -95,7 +101,7 @@ export async function setupTestDb(): Promise<void> {
 
 export async function teardownTestDb(): Promise<void> {
   try {
-    const { closeDb } = await import('../src/db/index.js');
+    const { closeDb } = await import('@api/db/index.js');
     await closeDb();
   } catch {
     /* ignore */

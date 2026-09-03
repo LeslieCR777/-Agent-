@@ -3,6 +3,8 @@ import { Badge, Button, Card, Empty } from '@ui/index.js';
 import { api, auth } from './api.js';
 import type { Competitor, Evidence, Run } from './models.js';
 import { Projects } from './Projects.js';
+import { CompetitorManager } from './CompetitorManager.js';
+import { CompetitorMultiSelect } from './CompetitorMultiSelect.js';
 import { RunDetail } from './RunDetail.js';
 import { RUN_LABELS, STAGE_LABELS, STATUS_TONE } from './constants.js';
 import { EvidenceQueue } from './EvidenceQueue.js';
@@ -62,6 +64,7 @@ function Console({ onLogout }: { onLogout: () => void }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [selectedCompetitorIds, setSelectedCompetitorIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -110,20 +113,21 @@ function Console({ onLogout }: { onLogout: () => void }) {
     const formEl = event.currentTarget;
     const form = new FormData(formEl);
     try {
-      const competitorId = String(form.get('competitor'));
+      if (selectedCompetitorIds.length !== 2) throw new Error('请选择恰好 2 个竞品进行对比');
       const briefResult = await api<{ brief: { id: string } }>('/api/analysis-briefs', {
         method: 'POST',
         body: JSON.stringify({
-          purpose: 'competitor_only', competitor_ids: [competitorId], market: String(form.get('market')),
+          purpose: 'competitor_only', competitor_ids: selectedCompetitorIds, market: String(form.get('market')),
           included_sources: ['official', 'news'], excluded_sources: [], max_runtime_seconds: 3600,
           cost_budget: 10, allow_unverified: false,
         }),
       });
-      await api('/api/runs', {
+      const created = await Promise.all(selectedCompetitorIds.map((competitorId) => api<{ run: Run }>('/api/runs', {
         method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() },
         body: JSON.stringify({ brief_id: briefResult.brief.id, competitor_id: competitorId }),
-      });
-      setMessage('分析已进入队列'); formEl.reset(); await refresh();
+      })));
+      setMessage('已创建 ' + created.length + ' 条并行分析任务'); formEl.reset(); setSelectedCompetitorIds([]); await refresh();
+      setSelectedRunId(created[0].run.id);
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : '创建失败'); }
     finally { setBusy(false); }
   }
@@ -145,6 +149,7 @@ function Console({ onLogout }: { onLogout: () => void }) {
         <div><span className="mark">CI</span><strong>Agent Swarm</strong></div>
         <nav aria-label='主导航'>
           <button className={tab === 'projects' ? 'active' : ''} onClick={() => switchTab('projects')}>研究项目</button>
+          <button className={tab === 'competitors' ? 'active' : ''} onClick={() => switchTab('competitors')}>竞品库 <em>{competitors.length}</em></button>
           <button className={tab === 'runs' ? 'active' : ''} onClick={() => switchTab('runs')}>分析运行</button>
           <button className={tab === 'evidence' ? 'active' : ''} onClick={() => switchTab('evidence')}>证据审核 <em>{evidence.length}</em></button>
         </nav>
@@ -152,21 +157,23 @@ function Console({ onLogout }: { onLogout: () => void }) {
       </aside>
       <main className="workspace">
         <header className="page-head">
-          <div><span className="eyebrow">PHASE TWO</span><h1>{inRunDetail ? '运行详情' : tab === 'projects' ? '研究项目' : tab === 'runs' ? '分析运行' : '证据审核'}</h1></div>
+          <div><span className="eyebrow">PHASE TWO</span><h1>{pageTitle}</h1></div>
           {!inRunDetail && <Button tone="quiet" onClick={() => void refresh()}>刷新</Button>}
         </header>
         {message && <div className="notice">{message}</div>}
-        {tab === 'projects' ? <Projects notify={setMessage} /> : tab === 'runs'
+        {tab === 'projects' ? <Projects notify={setMessage} onCompetitorsChanged={() => void refresh()} onOpenCompetitors={() => switchTab('competitors')} /> : tab === 'competitors' ? <CompetitorManager notify={setMessage} onChanged={() => void refresh()} /> : tab === 'runs'
           ? inRunDetail
             ? <RunDetail runId={selectedRunId!} notify={setMessage} onBack={() => { setSelectedRunId(null); void refresh(); }} />
             : <>
-              <Card title="发起分析">
-                <form className="create-grid" onSubmit={createRun}>
-                  <label>竞品<select name="competitor" required defaultValue=""><option value="" disabled>选择竞品</option>{competitors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-                  <label>目标市场<input name="market" required placeholder="例如：中国企业软件" /></label>
-                  <Button type="submit" disabled={busy || !competitors.length}>{busy ? '创建中…' : '开始分析'}</Button>
+              <Card title="发起多竞品对比分析" action={<span className="muted">所选竞品将并行运行并汇总结果</span>}>
+                <form className="comparison-create-form" onSubmit={createRun}>
+                  <CompetitorMultiSelect competitors={competitors} value={selectedCompetitorIds} onChange={setSelectedCompetitorIds} />
+                  <div className="comparison-create-actions">
+                    <label>目标市场<input name="market" required placeholder="例如：中国企业软件" /></label>
+                    <Button type="submit" disabled={busy || selectedCompetitorIds.length !== 2}>{busy ? '创建中…' : '开始对比分析'}</Button>
+                  </div>
                 </form>
-                {!competitors.length && <p className="hint">请先通过竞品 API 创建至少一个竞品。</p>}
+                {competitors.length < 2 && <p className="hint">请先在竞品库中至少登记 2 个竞品。</p>}
               </Card>
               <Card title="最近运行" action={<span className="muted">{runs.length} 条 · 点击行查看详情</span>}>
                 {!runs.length ? <Empty>暂无分析运行</Empty> : <div className="table-wrap"><table><thead><tr><th>运行</th><th>竞品</th><th>阶段</th><th>状态</th><th>进度</th><th>创建时间</th></tr></thead><tbody>{runs.map(run => <tr key={run.id} className="row-click" role="button" tabIndex={0} onClick={() => setSelectedRunId(run.id)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setSelectedRunId(run.id); } }}><td className="mono">{run.id.slice(0, 8)}</td><td>{run.snapshot?.competitor?.name ?? '—'}</td><td>{run.current_stage ? (STAGE_LABELS[run.current_stage] ?? '未知阶段') : '准备中'}</td><td><Badge tone={STATUS_TONE[run.status] ?? 'neutral'}>{RUN_LABELS[run.status] ?? '未知状态'}</Badge></td><td>{run.progress ?? 0}%</td><td>{new Date(run.created_at).toLocaleString()}</td></tr>)}</tbody></table></div>}
